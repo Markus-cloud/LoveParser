@@ -27,8 +27,10 @@ export default function Parsing() {
     }, 3000);
   };
 
+  const mockUserPhoto = "https://api.dicebear.com/7.x/avataaars/svg?seed=telegram";
+
   return (
-    <Layout>
+    <Layout backgroundImage={mockUserPhoto}>
       <div className="space-y-6 max-w-2xl mx-auto animate-slide-up">
         <GlassCard>
           <div className="flex items-center gap-3 mb-6">
@@ -43,34 +45,12 @@ export default function Parsing() {
 
           <div className="space-y-4">
             <div>
-              <Label>Город</Label>
-              <Select>
-                <SelectTrigger className="glass-card border-white/20 mt-1">
-                  <SelectValue placeholder="Выберите город" />
-                </SelectTrigger>
-                <SelectContent className="glass-card glass-effect">
-                  <SelectItem value="moscow">Москва</SelectItem>
-                  <SelectItem value="spb">Санкт-Петербург</SelectItem>
-                  <SelectItem value="ekb">Екатеринбург</SelectItem>
-                  <SelectItem value="nsk">Новосибирск</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-
-            <div>
-              <Label>Категория</Label>
-              <Select>
-                <SelectTrigger className="glass-card border-white/20 mt-1">
-                  <SelectValue placeholder="Выберите категорию" />
-                </SelectTrigger>
-                <SelectContent className="glass-card glass-effect">
-                  <SelectItem value="tech">Технологии</SelectItem>
-                  <SelectItem value="business">Бизнес</SelectItem>
-                  <SelectItem value="crypto">Криптовалюты</SelectItem>
-                  <SelectItem value="edu">Образование</SelectItem>
-                  <SelectItem value="sport">Спорт</SelectItem>
-                </SelectContent>
-              </Select>
+              <Label>Ключевые слова</Label>
+              <Input 
+                placeholder="Введите ключевые слова для поиска"
+                className="glass-card border-white/20 mt-1"
+              />
+              <p className="text-xs text-muted-foreground mt-1">Например: технологии, бизнес, криптовалюты</p>
             </div>
 
             <div className="grid grid-cols-2 gap-4">

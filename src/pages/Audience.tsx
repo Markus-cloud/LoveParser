@@ -3,6 +3,7 @@ import { GlassCard } from "@/components/GlassCard";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Switch } from "@/components/ui/switch";
 import { Users, TrendingUp, Download, Loader2 } from "lucide-react";
 import { useState } from "react";
 import { useToast } from "@/hooks/use-toast";
@@ -10,6 +11,13 @@ import { useToast } from "@/hooks/use-toast";
 export default function Audience() {
   const { toast } = useToast();
   const [isLoading, setIsLoading] = useState(false);
+  const [criteria, setCriteria] = useState({
+    likes: true,
+    comments: true,
+    reposts: true,
+    frequency: true,
+  });
+  const mockUserPhoto = "https://api.dicebear.com/7.x/avataaars/svg?seed=telegram";
 
   const handleParsing = () => {
     setIsLoading(true);
@@ -23,7 +31,7 @@ export default function Audience() {
   };
 
   return (
-    <Layout>
+    <Layout backgroundImage={mockUserPhoto}>
       <div className="space-y-6 max-w-2xl mx-auto animate-slide-up">
         <GlassCard>
           <div className="flex items-center gap-3 mb-6">
@@ -50,22 +58,34 @@ export default function Audience() {
                 <TrendingUp className="w-4 h-4 text-primary" />
                 Критерии активности
               </h4>
-              <div className="space-y-2 text-sm">
+              <div className="space-y-3 text-sm">
                 <div className="flex items-center justify-between">
                   <span className="text-muted-foreground">Лайки и реакции</span>
-                  <span className="font-medium">✓</span>
+                  <Switch 
+                    checked={criteria.likes}
+                    onCheckedChange={(checked) => setCriteria({...criteria, likes: checked})}
+                  />
                 </div>
                 <div className="flex items-center justify-between">
                   <span className="text-muted-foreground">Комментарии</span>
-                  <span className="font-medium">✓</span>
+                  <Switch 
+                    checked={criteria.comments}
+                    onCheckedChange={(checked) => setCriteria({...criteria, comments: checked})}
+                  />
                 </div>
                 <div className="flex items-center justify-between">
                   <span className="text-muted-foreground">Репосты</span>
-                  <span className="font-medium">✓</span>
+                  <Switch 
+                    checked={criteria.reposts}
+                    onCheckedChange={(checked) => setCriteria({...criteria, reposts: checked})}
+                  />
                 </div>
                 <div className="flex items-center justify-between">
                   <span className="text-muted-foreground">Частота активности</span>
-                  <span className="font-medium">✓</span>
+                  <Switch 
+                    checked={criteria.frequency}
+                    onCheckedChange={(checked) => setCriteria({...criteria, frequency: checked})}
+                  />
                 </div>
               </div>
             </GlassCard>

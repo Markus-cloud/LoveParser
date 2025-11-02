@@ -26,8 +26,10 @@ export default function Help() {
     },
   ];
 
+  const mockUserPhoto = "https://api.dicebear.com/7.x/avataaars/svg?seed=telegram";
+
   return (
-    <Layout>
+    <Layout backgroundImage={mockUserPhoto}>
       <div className="space-y-6 max-w-2xl mx-auto animate-slide-up">
         <GlassCard>
           <div className="flex items-center gap-3 mb-4">

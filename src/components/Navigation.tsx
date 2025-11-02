@@ -14,7 +14,7 @@ export const Navigation = () => {
 
   return (
     <nav className="fixed bottom-0 left-0 right-0 z-50">
-      <div className="glass-card glass-effect rounded-t-3xl border-t mx-4 mb-4">
+      <div className="glass-card glass-effect rounded-3xl border mx-4 mb-4 shadow-lg">
         <div className="flex justify-around items-center px-2 py-3">
           {navItems.map((item) => {
             const Icon = item.icon;

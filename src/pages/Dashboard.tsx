@@ -45,12 +45,12 @@ export default function Dashboard() {
               <p className="text-xs text-muted-foreground mt-1">ID: {user.id}</p>
             </div>
             {user.hasSubscription ? (
-              <Badge className="bg-accent/20 text-accent border-accent/30">
+              <Badge className="bg-accent/20 text-accent border-accent/30 text-xs whitespace-nowrap">
                 <CheckCircle className="w-3 h-3 mr-1" />
                 Активна
               </Badge>
             ) : (
-              <Badge variant="outline" className="border-muted">
+              <Badge variant="outline" className="border-muted text-xs whitespace-nowrap">
                 Нет подписки
               </Badge>
             )}
