@@ -5,8 +5,9 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { Users, TrendingUp, Download, Loader2 } from "lucide-react";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useToast } from "@/hooks/use-toast";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 export default function Audience() {
   const {
     toast
@@ -18,6 +19,12 @@ export default function Audience() {
     reposts: true,
     frequency: true
   });
+  const [parsingResults, setParsingResults] = useState<Array<{id: string, name: string, count: number}>>([]);
+
+  useEffect(() => {
+    const savedResults = JSON.parse(localStorage.getItem('parsingResults') || '[]');
+    setParsingResults(savedResults);
+  }, []);
   const mockUserPhoto = "https://api.dicebear.com/7.x/avataaars/svg?seed=telegram";
   const handleParsing = () => {
     setIsLoading(true);
@@ -56,6 +63,26 @@ export default function Audience() {
           </div>
 
           <div className="space-y-4">
+            <div>
+              <Label>Выберите базу каналов/чатов</Label>
+              <Select>
+                <SelectTrigger className="glass-card border-white/20 mt-1">
+                  <SelectValue placeholder="Выберите результаты парсинга" />
+                </SelectTrigger>
+                <SelectContent className="glass-card glass-effect">
+                  {parsingResults.length > 0 ? (
+                    parsingResults.map((result) => (
+                      <SelectItem key={result.id} value={result.id}>
+                        {result.name} ({result.count})
+                      </SelectItem>
+                    ))
+                  ) : (
+                    <SelectItem value="empty" disabled>Нет сохранённых результатов</SelectItem>
+                  )}
+                </SelectContent>
+              </Select>
+            </div>
+
             <div>
               <Label>Ссылка на канал / чат</Label>
               <Input placeholder="https://t.me/channelname или @channelname" className="glass-card border-white/20 mt-1" />

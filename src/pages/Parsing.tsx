@@ -5,21 +5,37 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Search, Download, FileSpreadsheet, Loader2 } from "lucide-react";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useToast } from "@/hooks/use-toast";
 
 export default function Parsing() {
   const { toast } = useToast();
   const [isLoading, setIsLoading] = useState(false);
-  const [files] = useState([
-    { name: "telegram_channels_moscow_tech.xlsx", date: "01.11.2024", count: 1247 },
-    { name: "telegram_channels_spb_business.xlsx", date: "28.10.2024", count: 892 },
-  ]);
+  const [files, setFiles] = useState<Array<{id: string, name: string, date: string, count: number}>>([]);
+
+  useEffect(() => {
+    const savedResults = JSON.parse(localStorage.getItem('parsingResults') || '[]');
+    setFiles(savedResults);
+  }, []);
 
   const handleParsing = () => {
     setIsLoading(true);
     setTimeout(() => {
       setIsLoading(false);
+      
+      // Save results to localStorage
+      const timestamp = new Date().toLocaleDateString('ru-RU');
+      const savedResults = JSON.parse(localStorage.getItem('parsingResults') || '[]');
+      const newResult = {
+        id: Date.now().toString(),
+        name: `Каналы ${timestamp}`,
+        date: timestamp,
+        count: Math.floor(Math.random() * 1000) + 500
+      };
+      savedResults.push(newResult);
+      localStorage.setItem('parsingResults', JSON.stringify(savedResults));
+      setFiles(savedResults);
+      
       toast({
         title: "Парсинг завершён",
         description: "Результаты сохранены в Excel файл",
