@@ -7,31 +7,29 @@ import { Switch } from "@/components/ui/switch";
 import { Users, TrendingUp, Download, Loader2 } from "lucide-react";
 import { useState } from "react";
 import { useToast } from "@/hooks/use-toast";
-
 export default function Audience() {
-  const { toast } = useToast();
+  const {
+    toast
+  } = useToast();
   const [isLoading, setIsLoading] = useState(false);
   const [criteria, setCriteria] = useState({
     likes: true,
     comments: true,
     reposts: true,
-    frequency: true,
+    frequency: true
   });
   const mockUserPhoto = "https://api.dicebear.com/7.x/avataaars/svg?seed=telegram";
-
   const handleParsing = () => {
     setIsLoading(true);
     setTimeout(() => {
       setIsLoading(false);
       toast({
         title: "Аудитория найдена",
-        description: "Данные об активных пользователях сохранены",
+        description: "Данные об активных пользователях сохранены"
       });
     }, 3000);
   };
-
-  return (
-    <Layout backgroundImage={mockUserPhoto}>
+  return <Layout backgroundImage={mockUserPhoto}>
       <div className="space-y-6 max-w-2xl mx-auto animate-slide-up">
         <GlassCard>
           <div className="flex items-center gap-3 mb-6">
@@ -47,10 +45,7 @@ export default function Audience() {
           <div className="space-y-4">
             <div>
               <Label>Ссылка на канал / чат</Label>
-              <Input 
-                placeholder="https://t.me/channelname или @channelname"
-                className="glass-card border-white/20 mt-1"
-              />
+              <Input placeholder="https://t.me/channelname или @channelname" className="glass-card border-white/20 mt-1" />
             </div>
 
             <GlassCard className="bg-primary/5 border-primary/20">
@@ -61,72 +56,50 @@ export default function Audience() {
               <div className="space-y-3 text-sm">
                 <div className="flex items-center justify-between">
                   <span className="text-muted-foreground">Лайки и реакции</span>
-                  <Switch 
-                    checked={criteria.likes}
-                    onCheckedChange={(checked) => setCriteria({...criteria, likes: checked})}
-                  />
+                  <Switch checked={criteria.likes} onCheckedChange={checked => setCriteria({
+                  ...criteria,
+                  likes: checked
+                })} />
                 </div>
                 <div className="flex items-center justify-between">
                   <span className="text-muted-foreground">Комментарии</span>
-                  <Switch 
-                    checked={criteria.comments}
-                    onCheckedChange={(checked) => setCriteria({...criteria, comments: checked})}
-                  />
+                  <Switch checked={criteria.comments} onCheckedChange={checked => setCriteria({
+                  ...criteria,
+                  comments: checked
+                })} />
                 </div>
                 <div className="flex items-center justify-between">
                   <span className="text-muted-foreground">Репосты</span>
-                  <Switch 
-                    checked={criteria.reposts}
-                    onCheckedChange={(checked) => setCriteria({...criteria, reposts: checked})}
-                  />
+                  <Switch checked={criteria.reposts} onCheckedChange={checked => setCriteria({
+                  ...criteria,
+                  reposts: checked
+                })} />
                 </div>
-                <div className="flex items-center justify-between">
-                  <span className="text-muted-foreground">Частота активности</span>
-                  <Switch 
-                    checked={criteria.frequency}
-                    onCheckedChange={(checked) => setCriteria({...criteria, frequency: checked})}
-                  />
-                </div>
+                
               </div>
             </GlassCard>
 
             <div className="grid grid-cols-2 gap-4">
               <div>
                 <Label>Период анализа</Label>
-                <Input 
-                  type="number" 
-                  placeholder="30"
-                  className="glass-card border-white/20 mt-1"
-                />
+                <Input type="number" placeholder="30" className="glass-card border-white/20 mt-1" />
                 <p className="text-xs text-muted-foreground mt-1">дней</p>
               </div>
               <div>
                 <Label>Мин. активность</Label>
-                <Input 
-                  type="number" 
-                  placeholder="5"
-                  className="glass-card border-white/20 mt-1"
-                />
+                <Input type="number" placeholder="5" className="glass-card border-white/20 mt-1" />
                 <p className="text-xs text-muted-foreground mt-1">действий</p>
               </div>
             </div>
 
-            <Button 
-              onClick={handleParsing}
-              disabled={isLoading}
-              className="w-full bg-gradient-to-r from-accent to-primary hover:opacity-90 glow-effect mt-6"
-            >
-              {isLoading ? (
-                <>
+            <Button onClick={handleParsing} disabled={isLoading} className="w-full bg-gradient-to-r from-accent to-primary hover:opacity-90 glow-effect mt-6">
+              {isLoading ? <>
                   <Loader2 className="w-4 h-4 mr-2 animate-spin" />
                   Анализ...
-                </>
-              ) : (
-                <>
+                </> : <>
                   <Users className="w-4 h-4 mr-2" />
                   Начать анализ
-                </>
-              )}
+                </>}
             </Button>
           </div>
         </GlassCard>
@@ -163,6 +136,5 @@ export default function Audience() {
           </p>
         </GlassCard>
       </div>
-    </Layout>
-  );
+    </Layout>;
 }
