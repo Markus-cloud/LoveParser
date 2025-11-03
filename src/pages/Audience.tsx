@@ -23,6 +23,19 @@ export default function Audience() {
     setIsLoading(true);
     setTimeout(() => {
       setIsLoading(false);
+      
+      // Save results to localStorage
+      const timestamp = new Date().toISOString();
+      const savedResults = JSON.parse(localStorage.getItem('audienceResults') || '[]');
+      const newResult = {
+        id: Date.now().toString(),
+        name: `Результаты поиска ${new Date().toLocaleDateString('ru-RU')}`,
+        count: Math.floor(Math.random() * 500) + 100,
+        timestamp
+      };
+      savedResults.push(newResult);
+      localStorage.setItem('audienceResults', JSON.stringify(savedResults));
+      
       toast({
         title: "Аудитория найдена",
         description: "Данные об активных пользователях сохранены"

@@ -3,9 +3,10 @@ import { GlassCard } from "@/components/GlassCard";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
+import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Send, Loader2, CheckCircle2, AlertCircle } from "lucide-react";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useToast } from "@/hooks/use-toast";
 import { Progress } from "@/components/ui/progress";
 
@@ -14,6 +15,13 @@ export default function Broadcast() {
   const [isLoading, setIsLoading] = useState(false);
   const [progress, setProgress] = useState(0);
   const [message, setMessage] = useState("");
+  const [manualNicknames, setManualNicknames] = useState("");
+  const [audienceResults, setAudienceResults] = useState<Array<{id: string, name: string, count: number}>>([]);
+
+  useEffect(() => {
+    const savedResults = JSON.parse(localStorage.getItem('audienceResults') || '[]');
+    setAudienceResults(savedResults);
+  }, []);
 
   const handleBroadcast = () => {
     if (!message.trim()) {
@@ -68,11 +76,30 @@ export default function Broadcast() {
                   <SelectValue placeholder="Выберите файл с результатами" />
                 </SelectTrigger>
                 <SelectContent className="glass-card glass-effect">
-                  <SelectItem value="file1">telegram_channels_moscow_tech.xlsx (1247)</SelectItem>
-                  <SelectItem value="file2">telegram_channels_spb_business.xlsx (892)</SelectItem>
-                  <SelectItem value="file3">active_audience_crypto.xlsx (543)</SelectItem>
+                  {audienceResults.length > 0 ? (
+                    audienceResults.map((result) => (
+                      <SelectItem key={result.id} value={result.id}>
+                        {result.name} ({result.count})
+                      </SelectItem>
+                    ))
+                  ) : (
+                    <SelectItem value="empty" disabled>Нет сохранённых результатов</SelectItem>
+                  )}
                 </SelectContent>
               </Select>
+            </div>
+
+            <div>
+              <Label>Ручной ввод никнеймов</Label>
+              <Input 
+                placeholder="@username1, @username2, @username3..."
+                className="glass-card border-white/20 mt-1"
+                value={manualNicknames}
+                onChange={(e) => setManualNicknames(e.target.value)}
+              />
+              <p className="text-xs text-muted-foreground mt-1">
+                Введите никнеймы через запятую
+              </p>
             </div>
 
             <div>
