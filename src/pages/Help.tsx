@@ -1,5 +1,6 @@
 import { Layout } from "@/components/Layout";
 import { GlassCard } from "@/components/GlassCard";
+import { Button } from "@/components/ui/button";
 import { BookOpen, Home, Search, Users, Send } from "lucide-react";
 
 export default function Help() {
@@ -12,17 +13,17 @@ export default function Help() {
     {
       icon: Search,
       title: "Парсинг каналов",
-      content: "Найдите нужные Telegram каналы по городу, категории и количеству участников. Результаты сохраняются в Excel файлы, которые можно скачать по отдельности или архивом.",
+      content: "Найдите нужные Telegram каналы по городу, категории и количеству участников. Результаты автоматически сохраняются и становятся доступны для выбора во вкладке Аудитория. Вы можете скачивать файлы по отдельности или архивом.",
     },
     {
       icon: Users,
       title: "Активная аудитория",
-      content: "Анализируйте активность пользователей в каналах и чатах. Система находит людей с наибольшей вовлечённостью по лайкам, комментариям и репостам за выбранный период.",
+      content: "Выберите базу каналов/чатов из сохранённых результатов парсинга или укажите ссылку вручную. Система анализирует активность пользователей и находит людей с наибольшей вовлечённостью по лайкам, комментариям и репостам. Результаты сохраняются для использования в рассылке.",
     },
     {
       icon: Send,
       title: "Рассылка",
-      content: "Отправляйте сообщения собранной аудитории. Система автоматически контролирует скорость отправки, чтобы избежать блокировки. Вы можете отслеживать прогресс в реальном времени.",
+      content: "Выберите базу контактов из сохранённых результатов анализа аудитории или введите никнеймы (@username) вручную через запятую. Система автоматически контролирует скорость отправки для безопасности. Прогресс отслеживается в реальном времени.",
     },
   ];
 
@@ -91,15 +92,24 @@ export default function Help() {
         </GlassCard>
 
         <GlassCard className="text-center">
-          <p className="text-sm text-muted-foreground">
+          <p className="text-sm text-muted-foreground mb-4">
             Если у вас остались вопросы, свяжитесь с поддержкой
           </p>
-          <a 
-            href="https://t.me/support" 
-            className="text-primary font-medium text-sm mt-2 inline-block hover:underline"
+          <Button 
+            asChild 
+            className="w-full sm:w-auto min-w-[200px] glass-card border-primary/30 hover:border-primary/50"
+            variant="outline"
           >
-            @support
-          </a>
+            <a 
+              href="https://t.me/RBCCRYPTA" 
+              target="_blank"
+              rel="noopener noreferrer"
+              className="flex items-center gap-2"
+            >
+              <Send className="w-4 h-4" />
+              Поддержка
+            </a>
+          </Button>
         </GlassCard>
       </div>
     </Layout>
