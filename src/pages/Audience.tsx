@@ -4,7 +4,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
-import { Users, TrendingUp, Download, Loader2 } from "lucide-react";
+import { Users, TrendingUp, Download, Loader2, FileSpreadsheet } from "lucide-react";
 import { useState, useEffect } from "react";
 import { useToast } from "@/hooks/use-toast";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -20,10 +20,14 @@ export default function Audience() {
     frequency: true
   });
   const [parsingResults, setParsingResults] = useState<Array<{id: string, name: string, count: number}>>([]);
+  const [audienceFiles, setAudienceFiles] = useState<Array<{id: string, name: string, count: number, timestamp: string}>>([]);
 
   useEffect(() => {
     const savedResults = JSON.parse(localStorage.getItem('parsingResults') || '[]');
     setParsingResults(savedResults);
+    const savedAudience = JSON.parse(localStorage.getItem('audienceResults') || '[]');
+    const sorted = [...savedAudience].sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
+    setAudienceFiles(sorted);
   }, []);
   const mockUserPhoto = "https://api.dicebear.com/7.x/avataaars/svg?seed=telegram";
   const handleParsing = () => {
@@ -32,16 +36,18 @@ export default function Audience() {
       setIsLoading(false);
       
       // Save results to localStorage
-      const timestamp = new Date().toISOString();
+      const now = new Date();
+      const timestamp = now.toISOString();
       const savedResults = JSON.parse(localStorage.getItem('audienceResults') || '[]');
       const newResult = {
         id: Date.now().toString(),
-        name: `Результаты поиска ${new Date().toLocaleDateString('ru-RU')}`,
+        name: `Результаты поиска ${now.toLocaleDateString('ru-RU')} ${now.toLocaleTimeString('ru-RU')}`,
         count: Math.floor(Math.random() * 500) + 100,
         timestamp
       };
-      savedResults.push(newResult);
-      localStorage.setItem('audienceResults', JSON.stringify(savedResults));
+      const updated = [newResult, ...savedResults];
+      localStorage.setItem('audienceResults', JSON.stringify(updated));
+      setAudienceFiles(updated);
       
       toast({
         title: "Аудитория найдена",
@@ -163,16 +169,48 @@ export default function Audience() {
           </GlassCard>
         </div>
 
-        <GlassCard>
-          <div className="flex items-center justify-between mb-4">
-            <h3 className="font-semibold">Экспорт данных</h3>
-            <Button size="sm" disabled className="glass-card border-white/20">
-              <Download className="w-4 h-4 mr-2" />
-              Excel
-            </Button>
+        <div className="space-y-3">
+          <div className="flex items-center justify-between px-2">
+            <h3 className="text-lg font-semibold">Экспорт данных</h3>
+            {audienceFiles.length > 0 && (
+              <Button size="sm" variant="outline" className="glass-card border-white/20">
+                <Download className="w-4 h-4 mr-2" />
+                Скачать все
+              </Button>
+            )}
           </div>
-          <p className="text-sm text-muted-foreground text-center py-4">Начните поиск для получения данных</p>
-        </GlassCard>
+
+          {audienceFiles.length === 0 ? (
+            <GlassCard>
+              <div className="text-center py-8">
+                <FileSpreadsheet className="w-12 h-12 mx-auto text-muted-foreground mb-3 opacity-50" />
+                <p className="text-muted-foreground">Данных пока нет</p>
+                <p className="text-sm text-muted-foreground mt-1">Начните поиск для получения данных</p>
+              </div>
+            </GlassCard>
+          ) : (
+            audienceFiles.map((file, idx) => (
+              <GlassCard key={idx} hover>
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-3">
+                    <div className="p-2 rounded-xl bg-accent/20">
+                      <FileSpreadsheet className="w-5 h-5 text-accent" />
+                    </div>
+                    <div>
+                      <p className="font-medium text-sm">{file.name}</p>
+                      <p className="text-xs text-muted-foreground">
+                        {file.count} пользователей • {new Date(file.timestamp).toLocaleDateString('ru-RU')}
+                      </p>
+                    </div>
+                  </div>
+                  <Button size="sm" variant="ghost">
+                    <Download className="w-4 h-4" />
+                  </Button>
+                </div>
+              </GlassCard>
+            ))
+          )}
+        </div>
       </div>
     </Layout>;
 }

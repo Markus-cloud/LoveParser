@@ -15,7 +15,12 @@ export default function Parsing() {
 
   useEffect(() => {
     const savedResults = JSON.parse(localStorage.getItem('parsingResults') || '[]');
-    setFiles(savedResults);
+    const sorted = [...savedResults].sort((a, b) => {
+      const tb = b.timestamp ? new Date(b.timestamp).getTime() : 0;
+      const ta = a.timestamp ? new Date(a.timestamp).getTime() : 0;
+      return tb - ta;
+    });
+    setFiles(sorted);
   }, []);
 
   const handleParsing = () => {
@@ -24,17 +29,20 @@ export default function Parsing() {
       setIsLoading(false);
       
       // Save results to localStorage
-      const timestamp = new Date().toLocaleDateString('ru-RU');
+      const now = new Date();
+      const dateStr = now.toLocaleDateString('ru-RU');
+      const timeStr = now.toLocaleTimeString('ru-RU');
       const savedResults = JSON.parse(localStorage.getItem('parsingResults') || '[]');
       const newResult = {
         id: Date.now().toString(),
-        name: `Каналы ${timestamp}`,
-        date: timestamp,
-        count: Math.floor(Math.random() * 1000) + 500
+        name: `Каналы ${dateStr} ${timeStr}`,
+        date: dateStr,
+        count: Math.floor(Math.random() * 1000) + 500,
+        timestamp: now.toISOString()
       };
-      savedResults.push(newResult);
-      localStorage.setItem('parsingResults', JSON.stringify(savedResults));
-      setFiles(savedResults);
+      const updated = [newResult, ...savedResults];
+      localStorage.setItem('parsingResults', JSON.stringify(updated));
+      setFiles(updated);
       
       toast({
         title: "Парсинг завершён",
