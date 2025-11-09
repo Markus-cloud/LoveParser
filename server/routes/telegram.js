@@ -69,45 +69,85 @@ telegramRouter.post('/search', async (req, res) => {
 
 // Search channels with filters
 telegramRouter.post('/search-channels', async (req, res) => {
-  const { query = '', minMembers = 0, maxMembers = Infinity, limit = 100, userId, channelTypes } = req.body || {};
+  // Support both old format (backward compatibility) and new format
+  const { 
+    // New format
+    keywords, 
+    filters, 
+    limits,
+    // Old format (backward compatibility)
+    query = '', 
+    minMembers = 0, 
+    maxMembers = Infinity, 
+    limit = 100, 
+    channelTypes,
+    userId 
+  } = req.body || {};
   
   if (!userId) {
     return res.status(401).json({ error: 'Unauthorized' });
   }
   
   try {
-    const min = Number(minMembers) || 0;
-    const max = Number(maxMembers) || Infinity;
-    const searchLimit = Math.min(Number(limit) || 100, 200);
-    
-    // Устанавливаем фильтры по типам каналов (по умолчанию все включены)
-    const filters = channelTypes || {
+    // Extract parameters from new format or fall back to old format
+    const searchKeywords = keywords || [query];
+    const min = filters?.minMembers !== undefined ? Number(filters.minMembers) || 0 : Number(minMembers) || 0;
+    const max = filters?.maxMembers !== undefined ? Number(filters.maxMembers) || Infinity : Number(maxMembers) || Infinity;
+    const searchLimit = Math.min(Number(limits?.limit) || Number(limit) || 100, 200);
+    const channelFilters = filters?.channelTypes || channelTypes || {
       megagroup: true,
       discussionGroup: true,
       broadcast: true
     };
     
-    const channels = await searchChannels(query, min, max, searchLimit, filters);
+    logger.info('search-channels request', { 
+      keywords: searchKeywords, 
+      min, 
+      max: max === Infinity ? 'unlimited' : max, 
+      limit: searchLimit, 
+      channelTypes: channelFilters,
+      userId 
+    });
+    
+    // Search for each keyword and combine results
+    let allChannels = [];
+    const processedIds = new Set();
+    
+    for (const keyword of searchKeywords) {
+      if (!keyword || !keyword.trim()) continue;
+      
+      const channels = await searchChannels(keyword.trim(), min, max, searchLimit, channelFilters);
+      
+      // Add channels avoiding duplicates
+      for (const channel of channels) {
+        const channelId = String(channel.id);
+        if (!processedIds.has(channelId)) {
+          processedIds.add(channelId);
+          allChannels.push(channel);
+        }
+      }
+    }
     
     // Сохраняем результаты для пользователя
     const resultsId = `parsing_${Date.now()}_${userId}`;
     const resultsData = {
       id: resultsId,
       userId: userId,
-      query: query,
+      query: query, // Keep for backward compatibility
+      keywords: searchKeywords,
       minMembers: min,
       maxMembers: max === Infinity ? null : max,
-      channels: channels,
+      channels: allChannels,
       timestamp: new Date().toISOString(),
-      count: channels.length
+      count: allChannels.length
     };
     
     writeJson(`parsing_results_${resultsId}.json`, resultsData);
     
     res.json({ 
-      results: channels,
+      results: allChannels,
       resultsId: resultsId,
-      count: channels.length
+      count: allChannels.length
     });
   } catch (e) {
     logger.error('search-channels failed', { error: String(e?.message || e) });

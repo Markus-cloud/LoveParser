@@ -556,6 +556,16 @@ export async function searchChannels(query, minMembers = 0, maxMembers = Infinit
               }
               
               if (shouldInclude) {
+                // Determine if channel is private (no username) and verified
+                const isPrivate = !username;
+                const isVerified = chat.verified || false;
+                
+                // Generate invite link if available
+                let inviteLink = null;
+                if (fullInfo?.exportedInvite) {
+                  inviteLink = fullInfo.exportedInvite.link;
+                }
+                
                 channels.push({
                   id: chatIdString,
                   title: title,
@@ -563,7 +573,11 @@ export async function searchChannels(query, minMembers = 0, maxMembers = Infinit
                   address: username ? `@${username}` : `tg://resolve?domain=${chatIdString}`,
                   membersCount: membersCountNumber,
                   description: description,
-                  type: channelType
+                  type: channelType,
+                  peer: chatIdString,
+                  isPrivate: isPrivate,
+                  isVerified: isVerified,
+                  inviteLink: inviteLink
                 });
               }
             }
