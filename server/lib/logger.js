@@ -12,9 +12,25 @@ function ensureLog() {
   if (!fs.existsSync(logFile)) fs.writeFileSync(logFile, '', 'utf-8');
 }
 
+// Helper function to convert BigInt to string recursively
+function serializeBigInt(obj) {
+  if (obj === null || obj === undefined) return obj;
+  if (typeof obj === 'bigint') return String(obj);
+  if (Array.isArray(obj)) return obj.map(serializeBigInt);
+  if (typeof obj === 'object') {
+    const result = {};
+    for (const [key, value] of Object.entries(obj)) {
+      result[key] = serializeBigInt(value);
+    }
+    return result;
+  }
+  return obj;
+}
+
 export function log(level, message, meta = {}) {
   ensureLog();
-  const entry = { ts: new Date().toISOString(), level, message, ...meta };
+  const sanitizedMeta = serializeBigInt(meta);
+  const entry = { ts: new Date().toISOString(), level, message, ...sanitizedMeta };
   const line = JSON.stringify(entry) + '\n';
   try {
     fs.appendFileSync(logFile, line);

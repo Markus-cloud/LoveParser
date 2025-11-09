@@ -5,17 +5,47 @@ import { Button } from "@/components/ui/button";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { BarChart3, Users, Send, CheckCircle, Crown } from "lucide-react";
-import { useState } from "react";
+import { useAuth } from "@/context/AuthContext";
+import { useMemo } from "react";
 
 export default function Dashboard() {
-  // Mock user data - will be replaced with Telegram WebApp API
-  const [user] = useState({
-    id: "123456789",
-    firstName: "Александр",
-    username: "@username",
-    photoUrl: "https://api.dicebear.com/7.x/avataaars/svg?seed=telegram",
-    hasSubscription: false,
-  });
+  const { user: authUser } = useAuth();
+
+  // Преобразуем данные пользователя из AuthContext в формат для компонента
+  const user = useMemo(() => {
+    if (!authUser) {
+      // Если пользователь еще не загружен, возвращаем значения по умолчанию
+      return {
+        id: "",
+        firstName: "Загрузка...",
+        username: "",
+        photoUrl: "",
+        hasSubscription: false,
+      };
+    }
+
+    // Формируем полное имя из first_name и last_name
+    const fullName = [authUser.first_name, authUser.last_name]
+      .filter(Boolean)
+      .join(" ") || authUser.first_name || "Пользователь";
+
+    // Формируем username с префиксом @ если он есть
+    const username = authUser.username 
+      ? (authUser.username.startsWith("@") ? authUser.username : `@${authUser.username}`)
+      : "";
+
+    // Используем фото из Telegram или дефолтное
+    const photoUrl = authUser.photo_url || 
+      `https://api.dicebear.com/7.x/avataaars/svg?seed=${authUser.id}`;
+
+    return {
+      id: authUser.id,
+      firstName: fullName,
+      username: username,
+      photoUrl: photoUrl,
+      hasSubscription: false, // TODO: добавить проверку подписки с сервера
+    };
+  }, [authUser]);
 
   const stats = [
     { icon: BarChart3, label: "Парсингов", value: "0", trend: "+0 за неделю" },
@@ -37,7 +67,7 @@ export default function Dashboard() {
           <div className="flex items-start gap-4 mb-4">
             <Avatar className="w-16 h-16 sm:w-20 sm:h-20 border-4 border-white/30 flex-shrink-0">
               <AvatarImage src={user.photoUrl} />
-              <AvatarFallback>{user.firstName[0]}</AvatarFallback>
+              <AvatarFallback>{user.firstName?.[0]?.toUpperCase() || "?"}</AvatarFallback>
             </Avatar>
             <div className="flex-1 min-w-0">
               <h2 className="text-xl sm:text-2xl font-bold">{user.firstName}</h2>

@@ -1,0 +1,232 @@
+{
+  "b27744ef-27a1-4600-bfed-40482875bdd4": {
+    "id": "b27744ef-27a1-4600-bfed-40482875bdd4",
+    "type": "parse_audience",
+    "payload": {
+      "chatId": "bm_institute_moscow",
+      "lastDays": 30,
+      "userId": "408683910",
+      "criteria": {
+        "likes": true,
+        "comments": true,
+        "reposts": true,
+        "frequency": true
+      },
+      "minActivity": 5
+    },
+    "userId": "408683910",
+    "status": "running",
+    "progress": 0,
+    "result": null,
+    "error": null,
+    "createdAt": 1762704054396,
+    "updatedAt": 1762704054401,
+    "message": "Resolving chat..."
+  },
+  "066fdc04-6522-47c0-8f1f-e5695be304df": {
+    "id": "066fdc04-6522-47c0-8f1f-e5695be304df",
+    "type": "parse_audience",
+    "payload": {
+      "chatId": "bm_institute_moscow",
+      "lastDays": 30,
+      "userId": "408683910",
+      "criteria": {
+        "likes": true,
+        "comments": true,
+        "reposts": true,
+        "frequency": true
+      },
+      "minActivity": 5
+    },
+    "userId": "408683910",
+    "status": "running",
+    "progress": 0,
+    "result": null,
+    "error": null,
+    "createdAt": 1762704062345,
+    "updatedAt": 1762704062349,
+    "message": "Resolving chat..."
+  },
+  "0383b40a-0b27-43c7-93e6-1577602b7618": {
+    "id": "0383b40a-0b27-43c7-93e6-1577602b7618",
+    "type": "parse_audience",
+    "payload": {
+      "chatId": "bm_institute_moscow",
+      "lastDays": 30,
+      "userId": "408683910",
+      "criteria": {
+        "likes": true,
+        "comments": true,
+        "reposts": true,
+        "frequency": true
+      },
+      "minActivity": 5
+    },
+    "userId": "408683910",
+    "status": "running",
+    "progress": 0,
+    "result": null,
+    "error": null,
+    "createdAt": 1762704110471,
+    "updatedAt": 1762704110480,
+    "message": "Resolving chat..."
+  },
+  "f658419d-52ce-42c3-b2ef-1687a3f892cd": {
+    "id": "f658419d-52ce-42c3-b2ef-1687a3f892cd",
+    "type": "parse_audience",
+    "payload": {
+      "chatId": "bm_institute_moscow",
+      "lastDays": 30,
+      "userId": "408683910",
+      "criteria": {
+        "likes": true,
+        "comments": true,
+        "reposts": true,
+        "frequency": true
+      },
+      "minActivity": 5
+    },
+    "userId": "408683910",
+    "status": "running",
+    "progress": 0,
+    "result": null,
+    "error": null,
+    "createdAt": 1762704254643,
+    "updatedAt": 1762704254647,
+    "message": "Resolving chat..."
+  },
+  "596d520e-4f39-4be6-aa32-4436e8d71185": {
+    "id": "596d520e-4f39-4be6-aa32-4436e8d71185",
+    "type": "parse_audience",
+    "payload": {
+      "chatId": "onlain_biznes_rabota",
+      "lastDays": 30,
+      "userId": "408683910",
+      "criteria": {
+        "likes": true,
+        "comments": true,
+        "reposts": true,
+        "frequency": true
+      },
+      "minActivity": 1
+    },
+    "userId": "408683910",
+    "status": "completed",
+    "progress": 100,
+    "result": {
+      "chatId": "onlain_biznes_rabota",
+      "total": 7,
+      "active": 0,
+      "resultsId": "audience_1762705768622_408683910"
+    },
+    "error": null,
+    "createdAt": 1762705768140,
+    "updatedAt": 1762705768625,
+    "message": "Done",
+    "current": 0,
+    "total": 7
+  },
+  "03e5f18e-ca5a-4bcf-b6cf-611f22be043d": {
+    "id": "03e5f18e-ca5a-4bcf-b6cf-611f22be043d",
+    "type": "parse_audience",
+    "payload": {
+      "chatId": "bm_institute_moscow",
+      "lastDays": 30,
+      "userId": "408683910",
+      "criteria": {
+        "likes": true,
+        "comments": true,
+        "reposts": true,
+        "frequency": true
+      },
+      "minActivity": 1
+    },
+    "userId": "408683910",
+    "status": "failed",
+    "progress": 0,
+    "result": null,
+    "error": "Do not know how to serialize a BigInt",
+    "createdAt": 1762706052570,
+    "updatedAt": 1762706052820,
+    "message": "Resolving chat..."
+  },
+  "74b6e9fd-12b8-48a2-99bf-c0064187b6cb": {
+    "id": "74b6e9fd-12b8-48a2-99bf-c0064187b6cb",
+    "type": "parse_audience",
+    "payload": {
+      "chatId": "onlain_biznes_rabota",
+      "lastDays": 30,
+      "userId": "408683910",
+      "criteria": {
+        "likes": true,
+        "comments": true,
+        "reposts": true,
+        "frequency": true
+      },
+      "minActivity": 1
+    },
+    "userId": "408683910",
+    "status": "failed",
+    "progress": 0,
+    "result": null,
+    "error": "Do not know how to serialize a BigInt",
+    "createdAt": 1762706064178,
+    "updatedAt": 1762706064401,
+    "message": "Resolving chat..."
+  },
+  "e8b4ac0c-1bb5-467c-adfa-814e821fcced": {
+    "id": "e8b4ac0c-1bb5-467c-adfa-814e821fcced",
+    "type": "parse_audience",
+    "payload": {
+      "chatId": "ikniga",
+      "lastDays": 30,
+      "userId": "408683910",
+      "criteria": {
+        "likes": true,
+        "comments": true,
+        "reposts": true,
+        "frequency": true
+      },
+      "minActivity": 1
+    },
+    "userId": "408683910",
+    "status": "failed",
+    "progress": 0,
+    "result": null,
+    "error": "Do not know how to serialize a BigInt",
+    "createdAt": 1762706081254,
+    "updatedAt": 1762706081462,
+    "message": "Resolving chat..."
+  },
+  "51520b59-d508-4ac3-a12e-c49b608e5fe2": {
+    "id": "51520b59-d508-4ac3-a12e-c49b608e5fe2",
+    "type": "parse_audience",
+    "payload": {
+      "chatId": "onlain_biznes_rabota",
+      "lastDays": 30,
+      "userId": "408683910",
+      "criteria": {
+        "likes": true,
+        "comments": true,
+        "reposts": true,
+        "frequency": true
+      },
+      "minActivity": 5
+    },
+    "userId": "408683910",
+    "status": "completed",
+    "progress": 100,
+    "result": {
+      "chatId": "onlain_biznes_rabota",
+      "total": 1,
+      "active": 0,
+      "resultsId": "audience_1762706577574_408683910"
+    },
+    "error": null,
+    "createdAt": 1762706577096,
+    "updatedAt": 1762706577576,
+    "message": "Done",
+    "current": 0,
+    "total": 1
+  }
+}

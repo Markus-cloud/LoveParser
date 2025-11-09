@@ -7,44 +7,119 @@ type User = {
   last_name?: string;
   photo_url?: string;
   language_code?: string;
+  firstName?: string;
+  lastName?: string;
 };
 
 type AuthContextValue = {
   user: User | null;
+  loading: boolean;
+  login: (userData: User, session?: string) => Promise<void>;
+  logout: () => void;
 };
 
-const AuthContext = createContext<AuthContextValue>({ user: null });
+const STORAGE_KEY = 'tele_fluence_user';
+const SESSION_KEY = 'tele_fluence_session';
+
+const AuthContext = createContext<AuthContextValue>({ 
+  user: null, 
+  loading: true,
+  login: async () => {},
+  logout: () => {},
+});
 
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [user, setUser] = useState<User | null>(null);
+  const [loading, setLoading] = useState(true);
 
+  // Проверка сохраненной сессии при инициализации
   useEffect(() => {
-    try {
-      // @ts-ignore
-      const tg = window?.Telegram?.WebApp;
-      const u = tg?.initDataUnsafe?.user;
-      if (u?.id) {
-        const payload = {
-          id: String(u.id),
-          username: u.username,
-          first_name: u.first_name,
-          last_name: u.last_name,
-          photo_url: u.photo_url,
-          language_code: u.language_code,
-        };
-        const apiUrl = import.meta.env.VITE_API_URL || '/api';
-        fetch(`${apiUrl}/user/login`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ user: payload }) })
-          .then((r) => r.json())
-          .then((data) => {
-            if (data?.success && data.user) setUser(data.user);
-          })
-          .catch(() => {});
+    const checkAuth = async () => {
+      try {
+        // Проверяем сохраненного пользователя в localStorage
+        const savedUser = localStorage.getItem(STORAGE_KEY);
+        const savedSession = localStorage.getItem(SESSION_KEY);
+
+        if (savedUser && savedSession) {
+          try {
+            const userData = JSON.parse(savedUser);
+            
+            // Проверяем статус авторизации на сервере
+            const apiUrl = import.meta.env.VITE_API_URL || '/api';
+            const response = await fetch(`${apiUrl}/telegram/auth/status`);
+            
+            if (response.ok) {
+              const status = await response.json();
+              
+              // Сравниваем userId как строки
+              if (status.authenticated && String(status.userId) === String(userData.id)) {
+                // Сессия валидна, используем сохраненные данные
+                setUser(userData);
+                setLoading(false);
+                return;
+              }
+            }
+          } catch (error) {
+            console.debug('Session validation error:', error);
+          }
+        }
+
+        // Если сессия невалидна или отсутствует, очищаем данные
+        localStorage.removeItem(STORAGE_KEY);
+        localStorage.removeItem(SESSION_KEY);
+      } catch (error) {
+        console.error('Auth check error:', error);
+      } finally {
+        setLoading(false);
       }
-    } catch {}
+    };
+
+    checkAuth();
   }, []);
 
+  const login = async (userData: User, session?: string) => {
+    // Преобразуем данные пользователя в нужный формат
+    const userPayload: User = {
+      id: String(userData.id),
+      username: userData.username,
+      first_name: userData.firstName || userData.first_name,
+      last_name: userData.lastName || userData.last_name,
+      firstName: userData.firstName || userData.first_name,
+      lastName: userData.lastName || userData.last_name,
+      photo_url: userData.photo_url,
+      language_code: userData.language_code,
+    };
+
+    // Сохраняем пользователя в localStorage
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(userPayload));
+    
+    if (session) {
+      localStorage.setItem(SESSION_KEY, session);
+    }
+
+    // Сохраняем пользователя на сервере через /api/user/login
+    try {
+      const apiUrl = import.meta.env.VITE_API_URL || '/api';
+      await fetch(`${apiUrl}/user/login`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ user: userPayload }),
+      });
+    } catch (error) {
+      console.error('Failed to save user on server:', error);
+    }
+
+    setUser(userPayload);
+  };
+
+  const logout = () => {
+    localStorage.removeItem(STORAGE_KEY);
+    localStorage.removeItem(SESSION_KEY);
+    setUser(null);
+  };
+
   return (
-    <AuthContext.Provider value={{ user }}>
+    <AuthContext.Provider value={{ user, loading, login, logout }}>
       {children}
     </AuthContext.Provider>
   );

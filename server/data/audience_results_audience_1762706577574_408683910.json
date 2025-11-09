@@ -1,0 +1,17 @@
+{
+  "id": "audience_1762706577574_408683910",
+  "userId": "408683910",
+  "chatId": "onlain_biznes_rabota",
+  "lastDays": 30,
+  "criteria": {
+    "likes": true,
+    "comments": true,
+    "reposts": true,
+    "frequency": true
+  },
+  "minActivity": 5,
+  "users": [],
+  "timestamp": "2025-11-09T16:42:57.574Z",
+  "count": 0,
+  "total": 1
+}

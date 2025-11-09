@@ -1,0 +1,20 @@
+{
+  "id": "parsing_1762709692507_408683910",
+  "userId": "408683910",
+  "query": "бизнес москва",
+  "minMembers": 0,
+  "maxMembers": null,
+  "channels": [
+    {
+      "id": "1492526366",
+      "title": "БИЗНЕС МОСКВА",
+      "username": "biznes_moskvaa",
+      "address": "@biznes_moskvaa",
+      "membersCount": 2097,
+      "description": "Админ и Реклама: @mskboardbot\nГруппы Москвы: @tele_msk\n\nПеред размещением сообщений в группе, прочитайте правила [закреп], подпишитесь на Канал: @msk_board и добавьте друзей!",
+      "type": "Megagroup"
+    }
+  ],
+  "timestamp": "2025-11-09T17:34:52.507Z",
+  "count": 1
+}

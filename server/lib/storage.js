@@ -24,10 +24,18 @@ export function readJson(fileName, defaultValue) {
   }
 }
 
+// Helper function to convert BigInt to string for JSON serialization
+function bigIntReplacer(key, value) {
+  if (typeof value === 'bigint') {
+    return String(value);
+  }
+  return value;
+}
+
 export function writeJson(fileName, value) {
   ensureDir(dataDir);
   const filePath = path.join(dataDir, fileName);
-  fs.writeFileSync(filePath, JSON.stringify(value, null, 2), 'utf-8');
+  fs.writeFileSync(filePath, JSON.stringify(value, bigIntReplacer, 2), 'utf-8');
 }
 
 export function getDataPath() {

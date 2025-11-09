@@ -3,52 +3,220 @@ import { GlassCard } from "@/components/GlassCard";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Search, Download, FileSpreadsheet, Loader2 } from "lucide-react";
+import { Switch } from "@/components/ui/switch";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { Search, Download, FileSpreadsheet, Loader2, Filter } from "lucide-react";
 import { useState, useEffect } from "react";
 import { useToast } from "@/hooks/use-toast";
+import { useApi } from "@/lib/api";
+import { useAuth } from "@/context/AuthContext";
+
+interface Channel {
+  id: string | number;
+  title: string;
+  address: string;
+  username?: string;
+  membersCount: number;
+  description?: string;
+  type?: string;
+}
+
+interface ParsingResult {
+  id: string;
+  name: string;
+  date: string;
+  count: number;
+  timestamp: string;
+  query?: string;
+}
+
+interface ParsingResultData {
+  id: string;
+  userId: string;
+  query: string;
+  minMembers: number;
+  maxMembers: number | null;
+  channels: Channel[];
+  timestamp: string;
+  count: number;
+}
 
 export default function Parsing() {
   const { toast } = useToast();
+  const { user } = useAuth();
+  const api = useApi();
   const [isLoading, setIsLoading] = useState(false);
-  const [files, setFiles] = useState<Array<{id: string, name: string, date: string, count: number}>>([]);
+  const [files, setFiles] = useState<ParsingResult[]>([]);
+  const [selectedResult, setSelectedResult] = useState<ParsingResultData | null>(null);
+  const [loadingResult, setLoadingResult] = useState(false);
+  
+  const [searchQuery, setSearchQuery] = useState("");
+  const [minMembers, setMinMembers] = useState("");
+  const [maxMembers, setMaxMembers] = useState("");
+  const [channelFilters, setChannelFilters] = useState({
+    megagroup: true,      // Публичный чат - для парсинга аудитории
+    discussionGroup: true, // Обсуждения в каналах - для парсинга аудитории
+    broadcast: true       // Каналы - для анализа каналов
+  });
+
+  const loadSavedResults = async () => {
+    try {
+      const response = await api.get('/telegram/parsing-results') as { results: ParsingResult[] };
+      setFiles(response.results || []);
+    } catch (e) {
+      console.error('Failed to load saved results', e);
+      setFiles([]);
+    }
+  };
 
   useEffect(() => {
-    const savedResults = JSON.parse(localStorage.getItem('parsingResults') || '[]');
-    const sorted = [...savedResults].sort((a, b) => {
-      const tb = b.timestamp ? new Date(b.timestamp).getTime() : 0;
-      const ta = a.timestamp ? new Date(a.timestamp).getTime() : 0;
-      return tb - ta;
-    });
-    setFiles(sorted);
-  }, []);
+    if (user?.id) {
+      loadSavedResults();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [user?.id]);
 
-  const handleParsing = () => {
+  const handleParsing = async () => {
+    if (!user?.id) {
+      toast({
+        title: "Ошибка",
+        description: "Необходима авторизация",
+        variant: "destructive",
+      });
+      return;
+    }
+
     setIsLoading(true);
-    setTimeout(() => {
-      setIsLoading(false);
+    setSelectedResult(null);
+
+    try {
+      const min = minMembers ? Number(minMembers) : 0;
+      const max = maxMembers ? Number(maxMembers) : Infinity;
       
-      // Save results to localStorage
-      const now = new Date();
-      const dateStr = now.toLocaleDateString('ru-RU');
-      const timeStr = now.toLocaleTimeString('ru-RU');
-      const savedResults = JSON.parse(localStorage.getItem('parsingResults') || '[]');
-      const newResult = {
-        id: Date.now().toString(),
-        name: `Каналы ${dateStr} ${timeStr}`,
-        date: dateStr,
-        count: Math.floor(Math.random() * 1000) + 500,
-        timestamp: now.toISOString()
-      };
-      const updated = [newResult, ...savedResults];
-      localStorage.setItem('parsingResults', JSON.stringify(updated));
-      setFiles(updated);
+      const response = await api.post('/telegram/search-channels', {
+        query: searchQuery,
+        minMembers: min,
+        maxMembers: max === Infinity ? undefined : max,
+        limit: 100,
+        userId: user.id,
+        channelTypes: channelFilters
+      }) as { results: Channel[], resultsId: string, count: number };
+
+      // Обновляем список сохранённых результатов
+      await loadSavedResults();
+      
+      // Загружаем только что сохраненный результат для отображения
+      await loadResultById(response.resultsId);
       
       toast({
         title: "Парсинг завершён",
-        description: "Результаты сохранены в Excel файл",
+        description: `Найдено ${response.count} каналов. Результаты сохранены.`,
       });
-    }, 3000);
+    } catch (e: unknown) {
+      const errorMessage = e instanceof Error ? e.message : 'Неизвестная ошибка';
+      toast({
+        title: "Ошибка парсинга",
+        description: errorMessage,
+        variant: "destructive",
+      });
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const loadResultById = async (resultsId: string) => {
+    if (!user?.id) return;
+    
+    setLoadingResult(true);
+    try {
+      const response = await api.get(`/telegram/parsing-results/${resultsId}`) as ParsingResultData;
+      setSelectedResult(response);
+    } catch (e) {
+      console.error('Failed to load result', e);
+      toast({
+        title: "Ошибка",
+        description: "Не удалось загрузить результат",
+        variant: "destructive",
+      });
+    } finally {
+      setLoadingResult(false);
+    }
+  };
+
+  const handleDownload = async (resultsId: string) => {
+    try {
+      const API_BASE_URL = import.meta.env.VITE_API_URL || '/api';
+      const userId = user?.id;
+      const url = `${API_BASE_URL}/telegram/parsing-results/${resultsId}/download?userId=${userId}`;
+      
+      const response = await fetch(url);
+      if (!response.ok) throw new Error('Failed to download');
+      
+      const blob = await response.blob();
+      const downloadUrl = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = downloadUrl;
+      a.download = `channels_${resultsId}.csv`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      window.URL.revokeObjectURL(downloadUrl);
+      
+      toast({
+        title: "Успешно",
+        description: "Файл скачан",
+      });
+    } catch (e: unknown) {
+      const errorMessage = e instanceof Error ? e.message : 'Неизвестная ошибка';
+      toast({
+        title: "Ошибка скачивания",
+        description: errorMessage,
+        variant: "destructive",
+      });
+    }
+  };
+
+  const handleViewResult = async (resultsId: string) => {
+    if (selectedResult?.id === resultsId) {
+      // Если уже открыт, закрываем
+      setSelectedResult(null);
+    } else {
+      // Загружаем результат
+      await loadResultById(resultsId);
+    }
+  };
+
+  const handleDownloadAll = async () => {
+    try {
+      const API_BASE_URL = import.meta.env.VITE_API_URL || '/api';
+      const userId = user?.id;
+      const url = `${API_BASE_URL}/telegram/parsing-results/download-all?userId=${userId}`;
+      
+      const response = await fetch(url);
+      if (!response.ok) throw new Error('Failed to download');
+      
+      const blob = await response.blob();
+      const downloadUrl = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = downloadUrl;
+      a.download = `all_parsing_results_${Date.now()}.zip`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      window.URL.revokeObjectURL(downloadUrl);
+      
+      toast({
+        title: "Успешно",
+        description: "Все результаты скачаны",
+      });
+    } catch (e: unknown) {
+      const errorMessage = e instanceof Error ? e.message : 'Неизвестная ошибка';
+      toast({
+        title: "Ошибка скачивания",
+        description: errorMessage,
+        variant: "destructive",
+      });
+    }
   };
 
   const mockUserPhoto = "https://api.dicebear.com/7.x/avataaars/svg?seed=telegram";
@@ -73,6 +241,8 @@ export default function Parsing() {
               <Input 
                 placeholder="Введите ключевые слова для поиска"
                 className="glass-card border-white/20 mt-1"
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
               />
               <p className="text-xs text-muted-foreground mt-1">Например: технологии, бизнес, криптовалюты</p>
             </div>
@@ -84,6 +254,8 @@ export default function Parsing() {
                   type="number" 
                   placeholder="1000" 
                   className="glass-card border-white/20 mt-1"
+                  value={minMembers}
+                  onChange={(e) => setMinMembers(e.target.value)}
                 />
               </div>
               <div>
@@ -92,9 +264,59 @@ export default function Parsing() {
                   type="number" 
                   placeholder="100000" 
                   className="glass-card border-white/20 mt-1"
+                  value={maxMembers}
+                  onChange={(e) => setMaxMembers(e.target.value)}
                 />
               </div>
             </div>
+
+            <GlassCard className="bg-primary/5 border-primary/20">
+              <h4 className="font-semibold text-sm mb-3 flex items-center gap-2">
+                <Filter className="w-4 h-4 text-primary" />
+                Фильтр по категориям
+              </h4>
+              <div className="space-y-3 text-sm">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <span className="text-muted-foreground">Публичный чат</span>
+                    <p className="text-xs text-muted-foreground/70 mt-0.5">Для парсинга аудитории</p>
+                  </div>
+                  <Switch 
+                    checked={channelFilters.megagroup} 
+                    onCheckedChange={checked => setChannelFilters({
+                      ...channelFilters,
+                      megagroup: checked
+                    })} 
+                  />
+                </div>
+                <div className="flex items-center justify-between">
+                  <div>
+                    <span className="text-muted-foreground">Обсуждения в каналах</span>
+                    <p className="text-xs text-muted-foreground/70 mt-0.5">Для парсинга аудитории</p>
+                  </div>
+                  <Switch 
+                    checked={channelFilters.discussionGroup} 
+                    onCheckedChange={checked => setChannelFilters({
+                      ...channelFilters,
+                      discussionGroup: checked
+                    })} 
+                  />
+                </div>
+                <div className="flex items-center justify-between">
+                  <div>
+                    <span className="text-muted-foreground">Каналы</span>
+                    <p className="text-xs text-muted-foreground/70 mt-0.5">Не подходит для парсинга аудитории</p>
+                  </div>
+                  <Switch 
+                    checked={channelFilters.broadcast} 
+                    onCheckedChange={checked => setChannelFilters({
+                      ...channelFilters,
+                      broadcast: checked
+                    })} 
+                  />
+                </div>
+              </div>
+            </GlassCard>
 
             <Button 
               onClick={handleParsing}
@@ -116,12 +338,105 @@ export default function Parsing() {
           </div>
         </GlassCard>
 
-        {/* Results Files */}
+        {/* Selected Result Table */}
+        {selectedResult && selectedResult.channels && selectedResult.channels.length > 0 && (
+          <GlassCard>
+            <div className="flex items-center justify-between mb-4">
+              <div>
+                <h3 className="text-lg font-semibold">Результаты поиска ({selectedResult.channels.length})</h3>
+                {selectedResult.query && (
+                  <p className="text-sm text-muted-foreground mt-1">
+                    Запрос: "{selectedResult.query}"
+                    {selectedResult.minMembers > 0 && ` • От ${selectedResult.minMembers} участников`}
+                    {selectedResult.maxMembers && ` • До ${selectedResult.maxMembers} участников`}
+                  </p>
+                )}
+              </div>
+              <Button 
+                size="sm" 
+                variant="outline" 
+                className="glass-card border-white/20"
+                onClick={() => handleDownload(selectedResult.id)}
+              >
+                <Download className="w-4 h-4 mr-2" />
+                Скачать CSV
+              </Button>
+            </div>
+            <div className="overflow-x-auto rounded-2xl border border-white/20 bg-white/10 backdrop-blur-sm custom-scrollbar">
+              <div className="max-h-[600px] overflow-y-auto custom-scrollbar">
+                <Table>
+                  <TableHeader className="sticky top-0 z-10 bg-white/20 backdrop-blur-md border-b border-white/20">
+                    <TableRow className="border-white/10 hover:bg-transparent">
+                      <TableHead className="text-muted-foreground font-semibold">Название канала</TableHead>
+                      <TableHead className="text-muted-foreground font-semibold">Адрес</TableHead>
+                      <TableHead className="text-muted-foreground font-semibold">Статус</TableHead>
+                      <TableHead className="text-right text-muted-foreground font-semibold">Участников</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {selectedResult.channels.map((channel, idx) => {
+                      const getStatusLabel = (type?: string) => {
+                        switch (type) {
+                          case 'Megagroup':
+                            return 'Публичный чат';
+                          case 'Discussion Group':
+                            return 'Обсуждения в каналах';
+                          case 'Broadcast':
+                            return 'Каналы';
+                          default:
+                            return type || 'Неизвестно';
+                        }
+                      };
+                      
+                      return (
+                        <TableRow 
+                          key={channel.id || idx}
+                          className="border-white/10 hover:bg-white/10 transition-colors"
+                        >
+                          <TableCell className="font-medium">{channel.title}</TableCell>
+                          <TableCell>
+                            {channel.username ? (
+                              <a 
+                                href={`https://t.me/${channel.username}`}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="text-primary hover:underline transition-colors"
+                              >
+                                {channel.address}
+                              </a>
+                            ) : (
+                              <span className="text-muted-foreground">{channel.address}</span>
+                            )}
+                          </TableCell>
+                          <TableCell>
+                            <span className="text-sm text-muted-foreground">
+                              {getStatusLabel(channel.type)}
+                            </span>
+                          </TableCell>
+                          <TableCell className="text-right font-medium">
+                            {channel.membersCount.toLocaleString('ru-RU')}
+                          </TableCell>
+                        </TableRow>
+                      );
+                    })}
+                  </TableBody>
+                </Table>
+              </div>
+            </div>
+          </GlassCard>
+        )}
+
+        {/* Saved Results Files */}
         <div className="space-y-3">
           <div className="flex items-center justify-between px-2">
-            <h3 className="text-lg font-semibold">Результаты</h3>
+            <h3 className="text-lg font-semibold">Экспорт данных</h3>
             {files.length > 0 && (
-              <Button size="sm" variant="outline" className="glass-card border-white/20">
+              <Button 
+                size="sm" 
+                variant="outline" 
+                className="glass-card border-white/20"
+                onClick={handleDownloadAll}
+              >
                 <Download className="w-4 h-4 mr-2" />
                 Скачать все
               </Button>
@@ -132,28 +447,55 @@ export default function Parsing() {
             <GlassCard>
               <div className="text-center py-8">
                 <FileSpreadsheet className="w-12 h-12 mx-auto text-muted-foreground mb-3 opacity-50" />
-                <p className="text-muted-foreground">Нет сохранённых результатов</p>
-                <p className="text-sm text-muted-foreground mt-1">Начните парсинг для получения данных</p>
+                <p className="text-muted-foreground">Данных пока нет</p>
+                <p className="text-sm text-muted-foreground mt-1">Начните поиск для получения данных</p>
               </div>
             </GlassCard>
           ) : (
             files.map((file, idx) => (
-              <GlassCard key={idx} hover>
+              <GlassCard key={file.id || idx} hover className={selectedResult?.id === file.id ? "ring-2 ring-primary" : ""}>
                 <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-3">
+                  <div 
+                    className="flex items-center gap-3 flex-1 cursor-pointer"
+                    onClick={() => handleViewResult(file.id)}
+                  >
                     <div className="p-2 rounded-xl bg-accent/20">
                       <FileSpreadsheet className="w-5 h-5 text-accent" />
                     </div>
-                    <div>
+                    <div className="flex-1">
                       <p className="font-medium text-sm">{file.name}</p>
                       <p className="text-xs text-muted-foreground">
-                        {file.count} контактов • {file.date}
+                        {file.count} каналов • {file.date}
                       </p>
                     </div>
                   </div>
-                  <Button size="sm" variant="ghost">
-                    <Download className="w-4 h-4" />
-                  </Button>
+                  <div className="flex items-center gap-2">
+                    <Button 
+                      size="sm" 
+                      variant="ghost"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleViewResult(file.id);
+                      }}
+                      title={selectedResult?.id === file.id ? "Скрыть таблицу" : "Показать таблицу"}
+                    >
+                      {loadingResult && selectedResult?.id === file.id ? (
+                        <Loader2 className="w-4 h-4 animate-spin" />
+                      ) : (
+                        <FileSpreadsheet className="w-4 h-4" />
+                      )}
+                    </Button>
+                    <Button 
+                      size="sm" 
+                      variant="ghost"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleDownload(file.id);
+                      }}
+                    >
+                      <Download className="w-4 h-4" />
+                    </Button>
+                  </div>
                 </div>
               </GlassCard>
             ))

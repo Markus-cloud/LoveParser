@@ -8,52 +8,269 @@ import { Users, TrendingUp, Download, Loader2, FileSpreadsheet } from "lucide-re
 import { useState, useEffect } from "react";
 import { useToast } from "@/hooks/use-toast";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { useApi } from "@/lib/api";
+import { useAuth } from "@/context/AuthContext";
+
+interface Channel {
+  id: string;
+  title: string;
+  address: string;
+  username?: string;
+  membersCount: number;
+  type?: string;
+  parsingResultId?: string;
+  parsingResultName?: string;
+}
+
+interface AudienceResult {
+  id: string;
+  name: string;
+  date: string;
+  count: number;
+  timestamp: string;
+  chatId?: string;
+}
+
 export default function Audience() {
-  const {
-    toast
-  } = useToast();
+  const { toast } = useToast();
+  const { user } = useAuth();
+  const api = useApi();
   const [isLoading, setIsLoading] = useState(false);
+  const [selectedChannelId, setSelectedChannelId] = useState<string>("");
+  const [selectedChannel, setSelectedChannel] = useState<Channel | null>(null);
+  const [chatLink, setChatLink] = useState("");
   const [criteria, setCriteria] = useState({
     likes: true,
     comments: true,
     reposts: true,
     frequency: true
   });
-  const [parsingResults, setParsingResults] = useState<Array<{id: string, name: string, count: number}>>([]);
-  const [audienceFiles, setAudienceFiles] = useState<Array<{id: string, name: string, count: number, timestamp: string}>>([]);
+  const [lastDays, setLastDays] = useState("30");
+  const [minActivity, setMinActivity] = useState("5");
+  const [channels, setChannels] = useState<Channel[]>([]);
+  const [audienceFiles, setAudienceFiles] = useState<AudienceResult[]>([]);
+  const [activeCount, setActiveCount] = useState(0);
+  const [engagementRate, setEngagementRate] = useState(0);
+
+  const loadChannels = async () => {
+    if (!user?.id) {
+      console.log('loadChannels: No user ID');
+      return;
+    }
+    
+    try {
+      console.log('loadChannels: Loading channels for user', user.id);
+      const response = await api.get('/telegram/parsing-results/channels') as { channels: Channel[] };
+      console.log('loadChannels: Response received', { channelsCount: response.channels?.length || 0, channels: response.channels });
+      setChannels(response.channels || []);
+    } catch (e) {
+      console.error('Failed to load channels', e);
+      setChannels([]);
+    }
+  };
+
+  const loadAudienceResults = async () => {
+    if (!user?.id) return;
+    
+    try {
+      const response = await api.get('/telegram/audience-results') as { results: AudienceResult[] };
+      setAudienceFiles(response.results || []);
+    } catch (e) {
+      console.error('Failed to load audience results', e);
+      setAudienceFiles([]);
+    }
+  };
 
   useEffect(() => {
-    const savedResults = JSON.parse(localStorage.getItem('parsingResults') || '[]');
-    setParsingResults(savedResults);
-    const savedAudience = JSON.parse(localStorage.getItem('audienceResults') || '[]');
-    const sorted = [...savedAudience].sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
-    setAudienceFiles(sorted);
-  }, []);
+    if (user?.id) {
+      console.log('Audience: User ID changed, loading channels', user.id);
+      loadChannels();
+      loadAudienceResults();
+    } else {
+      console.log('Audience: No user ID, clearing channels');
+      setChannels([]);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [user?.id]);
   const mockUserPhoto = "https://api.dicebear.com/7.x/avataaars/svg?seed=telegram";
-  const handleParsing = () => {
+
+  const handleParsing = async () => {
+    if (!user?.id) {
+      toast({
+        title: "Ошибка",
+        description: "Необходима авторизация",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    // Определяем chatId из выбранного канала или ссылки
+    let chatId: string | undefined;
+    
+    if (selectedChannel) {
+      // Используем username, если доступен, иначе id
+      chatId = selectedChannel.username || selectedChannel.id;
+    } else if (chatLink) {
+      // Извлекаем chatId из ссылки
+      const match = chatLink.match(/(?:https?:\/\/)?(?:t\.me\/|@)(\w+)/);
+      if (match) {
+        chatId = match[1];
+      } else {
+        toast({
+          title: "Ошибка",
+          description: "Неверный формат ссылки на канал",
+          variant: "destructive",
+        });
+        return;
+      }
+    }
+
+    if (!chatId) {
+      toast({
+        title: "Ошибка",
+        description: "Выберите канал или введите ссылку",
+        variant: "destructive",
+      });
+      return;
+    }
+
     setIsLoading(true);
-    setTimeout(() => {
-      setIsLoading(false);
-      
-      // Save results to localStorage
-      const now = new Date();
-      const timestamp = now.toISOString();
-      const savedResults = JSON.parse(localStorage.getItem('audienceResults') || '[]');
-      const newResult = {
-        id: Date.now().toString(),
-        name: `Результаты поиска ${now.toLocaleDateString('ru-RU')} ${now.toLocaleTimeString('ru-RU')}`,
-        count: Math.floor(Math.random() * 500) + 100,
-        timestamp
+    setActiveCount(0);
+    setEngagementRate(0);
+
+    try {
+      const response = await api.post('/telegram/parse', {
+        chatId: chatId,
+        lastDays: Number(lastDays) || 30,
+        criteria: criteria,
+        minActivity: Number(minActivity) || 0,
+        userId: user.id
+      }) as { taskId: string };
+
+      // Отслеживаем прогресс задачи через SSE
+      const API_BASE_URL = import.meta.env.VITE_API_URL || '/api';
+      const eventSource = new EventSource(`${API_BASE_URL}/tasks/${response.taskId}/stream?userId=${encodeURIComponent(user.id)}`);
+
+      eventSource.onmessage = (event) => {
+        const data = JSON.parse(event.data);
+        if (data.status === 'completed') {
+          eventSource.close();
+          setIsLoading(false);
+          setActiveCount(data.result?.active || 0);
+          const total = data.result?.total || 0;
+          setEngagementRate(total > 0 ? Math.round((data.result?.active || 0) / total * 100) : 0);
+          
+          // Обновляем список результатов
+          loadAudienceResults();
+          
+          toast({
+            title: "Аудитория найдена",
+            description: `Найдено ${data.result?.active || 0} активных пользователей из ${total}`,
+          });
+        } else if (data.status === 'failed') {
+          eventSource.close();
+          setIsLoading(false);
+          toast({
+            title: "Ошибка",
+            description: data.error || "Не удалось найти активную аудиторию",
+            variant: "destructive",
+          });
+        } else if (data.status === 'running') {
+          // Обновляем прогресс
+          const progress = data.progress || 0;
+          const current = data.current || 0;
+          const total = data.total || 0;
+          if (total > 0) {
+            setActiveCount(current);
+            setEngagementRate(Math.round(current / total * 100));
+          }
+        }
       };
-      const updated = [newResult, ...savedResults];
-      localStorage.setItem('audienceResults', JSON.stringify(updated));
-      setAudienceFiles(updated);
+
+      eventSource.onerror = () => {
+        eventSource.close();
+        setIsLoading(false);
+        toast({
+          title: "Ошибка",
+          description: "Не удалось подключиться к серверу",
+          variant: "destructive",
+        });
+      };
+    } catch (e: unknown) {
+      setIsLoading(false);
+      const errorMessage = e instanceof Error ? e.message : 'Неизвестная ошибка';
+      toast({
+        title: "Ошибка поиска",
+        description: errorMessage,
+        variant: "destructive",
+      });
+    }
+  };
+
+  const handleDownload = async (resultsId: string) => {
+    try {
+      const API_BASE_URL = import.meta.env.VITE_API_URL || '/api';
+      const userId = user?.id;
+      const url = `${API_BASE_URL}/telegram/audience-results/${resultsId}/download?userId=${userId}`;
+      
+      const response = await fetch(url);
+      if (!response.ok) throw new Error('Failed to download');
+      
+      const blob = await response.blob();
+      const downloadUrl = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = downloadUrl;
+      a.download = `audience_${resultsId}.csv`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      window.URL.revokeObjectURL(downloadUrl);
       
       toast({
-        title: "Аудитория найдена",
-        description: "Данные об активных пользователях сохранены"
+        title: "Успешно",
+        description: "Файл скачан",
       });
-    }, 3000);
+    } catch (e: unknown) {
+      const errorMessage = e instanceof Error ? e.message : 'Неизвестная ошибка';
+      toast({
+        title: "Ошибка скачивания",
+        description: errorMessage,
+        variant: "destructive",
+      });
+    }
+  };
+
+  const handleDownloadAll = async () => {
+    try {
+      const API_BASE_URL = import.meta.env.VITE_API_URL || '/api';
+      const userId = user?.id;
+      const url = `${API_BASE_URL}/telegram/audience-results/download-all?userId=${userId}`;
+      
+      const response = await fetch(url);
+      if (!response.ok) throw new Error('Failed to download');
+      
+      const blob = await response.blob();
+      const downloadUrl = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = downloadUrl;
+      a.download = `all_audience_results_${Date.now()}.zip`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      window.URL.revokeObjectURL(downloadUrl);
+      
+      toast({
+        title: "Успешно",
+        description: "Все результаты скачаны",
+      });
+    } catch (e: unknown) {
+      const errorMessage = e instanceof Error ? e.message : 'Неизвестная ошибка';
+      toast({
+        title: "Ошибка скачивания",
+        description: errorMessage,
+        variant: "destructive",
+      });
+    }
   };
   return <Layout backgroundImage={mockUserPhoto}>
       <div className="space-y-6 max-w-2xl mx-auto animate-slide-up">
@@ -70,20 +287,29 @@ export default function Audience() {
 
           <div className="space-y-4">
             <div>
-              <Label>Выберите базу каналов/чатов</Label>
-              <Select>
+              <Label>Выберите базу каналов/чатов {channels.length > 0 && `(${channels.length} каналов)`}</Label>
+              <Select 
+                value={selectedChannelId} 
+                onValueChange={(value) => {
+                  setSelectedChannelId(value);
+                  const channel = channels.find(ch => ch.id === value);
+                  setSelectedChannel(channel || null);
+                }}
+              >
                 <SelectTrigger className="glass-card border-white/20 mt-1">
                   <SelectValue placeholder="Выберите результаты парсинга" />
                 </SelectTrigger>
                 <SelectContent className="glass-card glass-effect">
-                  {parsingResults.length > 0 ? (
-                    parsingResults.map((result) => (
-                      <SelectItem key={result.id} value={result.id}>
-                        {result.name} ({result.count})
+                  {channels.length > 0 ? (
+                    channels.map((channel) => (
+                      <SelectItem key={channel.id} value={channel.id}>
+                        {channel.title} ({channel.membersCount.toLocaleString('ru-RU')}){channel.type ? ` - ${channel.type}` : ''}
                       </SelectItem>
                     ))
                   ) : (
-                    <SelectItem value="empty" disabled>Нет сохранённых результатов</SelectItem>
+                    <SelectItem value="empty" disabled>
+                      {user?.id ? 'Нет сохранённых результатов парсинга' : 'Необходима авторизация'}
+                    </SelectItem>
                   )}
                 </SelectContent>
               </Select>
@@ -91,7 +317,12 @@ export default function Audience() {
 
             <div>
               <Label>Ссылка на канал / чат</Label>
-              <Input placeholder="https://t.me/channelname или @channelname" className="glass-card border-white/20 mt-1" />
+              <Input 
+                placeholder="https://t.me/channelname или @channelname" 
+                className="glass-card border-white/20 mt-1"
+                value={chatLink}
+                onChange={(e) => setChatLink(e.target.value)}
+              />
             </div>
 
             <GlassCard className="bg-primary/5 border-primary/20">
@@ -128,12 +359,24 @@ export default function Audience() {
             <div className="grid grid-cols-2 gap-4">
               <div>
                 <Label>Период анализа</Label>
-                <Input type="number" placeholder="30" className="glass-card border-white/20 mt-1" />
+                <Input 
+                  type="number" 
+                  placeholder="30" 
+                  className="glass-card border-white/20 mt-1"
+                  value={lastDays}
+                  onChange={(e) => setLastDays(e.target.value)}
+                />
                 <p className="text-xs text-muted-foreground mt-1">дней</p>
               </div>
               <div>
                 <Label>Мин. активность</Label>
-                <Input type="number" placeholder="5" className="glass-card border-white/20 mt-1" />
+                <Input 
+                  type="number" 
+                  placeholder="5" 
+                  className="glass-card border-white/20 mt-1"
+                  value={minActivity}
+                  onChange={(e) => setMinActivity(e.target.value)}
+                />
                 <p className="text-xs text-muted-foreground mt-1">действий</p>
               </div>
             </div>
@@ -156,7 +399,7 @@ export default function Audience() {
             <div className="p-3 rounded-2xl bg-primary/20 w-fit mx-auto mb-3">
               <Users className="w-6 h-6 text-primary" />
             </div>
-            <p className="text-2xl font-bold">0</p>
+            <p className="text-2xl font-bold">{activeCount}</p>
             <p className="text-sm text-muted-foreground">Активных</p>
           </GlassCard>
           
@@ -164,7 +407,7 @@ export default function Audience() {
             <div className="p-3 rounded-2xl bg-accent/20 w-fit mx-auto mb-3">
               <TrendingUp className="w-6 h-6 text-accent" />
             </div>
-            <p className="text-2xl font-bold">0%</p>
+            <p className="text-2xl font-bold">{engagementRate}%</p>
             <p className="text-sm text-muted-foreground">Вовлечённость</p>
           </GlassCard>
         </div>
@@ -173,7 +416,12 @@ export default function Audience() {
           <div className="flex items-center justify-between px-2">
             <h3 className="text-lg font-semibold">Экспорт данных</h3>
             {audienceFiles.length > 0 && (
-              <Button size="sm" variant="outline" className="glass-card border-white/20">
+              <Button 
+                size="sm" 
+                variant="outline" 
+                className="glass-card border-white/20"
+                onClick={handleDownloadAll}
+              >
                 <Download className="w-4 h-4 mr-2" />
                 Скачать все
               </Button>
@@ -190,7 +438,7 @@ export default function Audience() {
             </GlassCard>
           ) : (
             audienceFiles.map((file, idx) => (
-              <GlassCard key={idx} hover>
+              <GlassCard key={file.id || idx} hover>
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-3">
                     <div className="p-2 rounded-xl bg-accent/20">
@@ -199,11 +447,15 @@ export default function Audience() {
                     <div>
                       <p className="font-medium text-sm">{file.name}</p>
                       <p className="text-xs text-muted-foreground">
-                        {file.count} пользователей • {new Date(file.timestamp).toLocaleDateString('ru-RU')}
+                        {file.count} пользователей • {file.date}
                       </p>
                     </div>
                   </div>
-                  <Button size="sm" variant="ghost">
+                  <Button 
+                    size="sm" 
+                    variant="ghost"
+                    onClick={() => handleDownload(file.id)}
+                  >
                     <Download className="w-4 h-4" />
                   </Button>
                 </div>
