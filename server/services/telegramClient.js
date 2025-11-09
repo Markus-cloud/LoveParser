@@ -556,14 +556,100 @@ export async function searchChannels(query, minMembers = 0, maxMembers = Infinit
               }
               
               if (shouldInclude) {
+                // Extract additional metadata from the Telegram API response
+                const peer = {
+                  id: chatIdString,
+                  className: chat.className,
+                  accessHash: chat.accessHash?.value || chat.accessHash,
+                  username: username,
+                  title: title,
+                  flags: chat.flags,
+                  megagroup: chat.megagroup,
+                  broadcast: chat.broadcast,
+                  verified: chat.verified,
+                  restricted: chat.restricted,
+                  scam: chat.scam,
+                  fake: chat.fake,
+                  gigagroup: chat.gigagroup
+                };
+
+                // Extract metadata flags
+                const metadata = {
+                  isVerified: chat.verified || false,
+                  isRestricted: chat.restricted || false,
+                  isScam: chat.scam || false,
+                  isFake: chat.fake || false,
+                  isGigagroup: chat.gigagroup || false,
+                  hasUsername: !!username,
+                  isPublic: !!username,
+                  privacy: username ? 'public' : 'private'
+                };
+
+                // Determine category based on type and metadata
+                let category = channelType;
+                if (metadata.isVerified) {
+                  category = `Verified ${category}`;
+                } else if (metadata.isScam) {
+                  category = `Scam ${category}`;
+                } else if (metadata.isFake) {
+                  category = `Fake ${category}`;
+                }
+
+                // Extract invite link if available
+                let inviteLink = null;
+                if (fullInfo?.exportedInvite) {
+                  inviteLink = fullInfo.exportedInvite.link || null;
+                }
+
+                // Extract additional channel metadata
+                const channelMetadata = {
+                  linkedChatId: fullInfo?.linkedChatId?.value || fullInfo?.linkedChatId || null,
+                  canViewParticipants: fullInfo?.canViewParticipants || false,
+                  canSetUsername: fullInfo?.canSetUsername || false,
+                  canSetStickers: fullInfo?.canSetStickers || false,
+                  hiddenPrehistory: fullInfo?.hiddenPrehistory || false,
+                  participantsCount: membersCountNumber,
+                  adminsCount: fullInfo?.adminsCount?.value || fullInfo?.adminsCount || 0,
+                  kickedCount: fullInfo?.kickedCount?.value || fullInfo?.kickedCount || 0,
+                  bannedCount: fullInfo?.bannedCount?.value || fullInfo?.bannedCount || 0,
+                  onlineCount: fullInfo?.onlineCount?.value || fullInfo?.onlineCount || 0,
+                  readInboxMaxId: fullInfo?.readInboxMaxId?.value || fullInfo?.readInboxMaxId || 0,
+                  readOutboxMaxId: fullInfo?.readOutboxMaxId?.value || fullInfo?.readOutboxMaxId || 0,
+                  unreadCount: fullInfo?.unreadCount?.value || fullInfo?.unreadCount || 0
+                };
+
                 channels.push({
+                  // Basic fields (backward compatible)
                   id: chatIdString,
                   title: title,
                   username: username,
                   address: username ? `@${username}` : `tg://resolve?domain=${chatIdString}`,
                   membersCount: membersCountNumber,
                   description: description,
-                  type: channelType
+                  type: channelType,
+                  
+                  // Enriched fields
+                  peer: peer,
+                  metadata: metadata,
+                  category: category,
+                  inviteLink: inviteLink,
+                  channelMetadata: channelMetadata,
+                  
+                  // Additional useful fields
+                  resolvedLink: username ? `https://t.me/${username}` : null,
+                  fullDescription: description,
+                  searchableText: `${title} ${description}`.toLowerCase(),
+                  
+                  // Timestamps
+                  date: fullInfo?.date ? Number(fullInfo.date) : null,
+                  
+                  // Additional flags
+                  hasForwards: fullInfo?.hasForwards || false,
+                  hasScheduled: fullInfo?.hasScheduled || false,
+                  canDeleteHistory: fullInfo?.canDeleteHistory || false,
+                  antiSpamEnabled: fullInfo?.antiSpamEnabled || false,
+                  joinToSend: fullInfo?.joinToSend || false,
+                  requestJoinRequired: fullInfo?.requestJoinRequired || false
                 });
               }
             }
