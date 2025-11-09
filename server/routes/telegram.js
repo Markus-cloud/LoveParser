@@ -83,8 +83,10 @@ telegramRouter.post('/search-channels', async (req, res) => {
     // Устанавливаем фильтры по типам каналов (по умолчанию все включены)
     const filters = channelTypes || {
       megagroup: true,
-      discussionGroup: true,
-      broadcast: true
+      discussion: true,
+      broadcast: true,
+      basic: true,
+      other: false
     };
     
     const channels = await searchChannels(query, min, max, searchLimit, filters);
@@ -224,8 +226,20 @@ telegramRouter.get('/parsing-results/download-all', async (req, res) => {
         const resultsData = readJson(file, null);
         if (resultsData && resultsData.userId === userId) {
           // Функция для преобразования типа канала в читаемый статус
-          const getStatusLabel = (type) => {
-            switch (type) {
+          const getStatusLabel = (category) => {
+            switch (category) {
+              // New canonical categories
+              case 'megagroup':
+                return 'Публичный чат';
+              case 'discussion':
+                return 'Обсуждения в каналах';
+              case 'broadcast':
+                return 'Каналы';
+              case 'basic':
+                return 'Обычный чат';
+              case 'other':
+                return 'Прочее';
+              // Legacy category names for backward compatibility
               case 'Megagroup':
                 return 'Публичный чат';
               case 'Discussion Group':
@@ -233,7 +247,7 @@ telegramRouter.get('/parsing-results/download-all', async (req, res) => {
               case 'Broadcast':
                 return 'Каналы';
               default:
-                return type || 'Неизвестно';
+                return category || 'Неизвестно';
             }
           };
           
@@ -242,12 +256,10 @@ telegramRouter.get('/parsing-results/download-all', async (req, res) => {
           const csvHeader = `Название канала${delimiter}Ссылка на канал${delimiter}Статус${delimiter}Количество подписчиков\n`;
           const csvRows = channels.map(ch => {
             const title = (ch.title || '').replace(/"/g, '""');
-            // Формируем ссылку на канал: если есть username, используем https://t.me/username, иначе используем сохраненный address
-            const link = ch.username 
-              ? `https://t.me/${ch.username}`
-              : (ch.address || '');
+            // Формируем ссылку на канал: используем новый link field или fallback к username
+            const link = ch.link || (ch.username ? `https://t.me/${ch.username}` : (ch.address || ''));
             const linkEscaped = link.replace(/"/g, '""');
-            const status = getStatusLabel(ch.type);
+            const status = getStatusLabel(ch.category || ch.type);
             const statusEscaped = status.replace(/"/g, '""');
             const membersCount = ch.membersCount || 0;
             // Оборачиваем в кавычки только если значение содержит разделитель или кавычки
@@ -311,8 +323,20 @@ telegramRouter.get('/parsing-results/:resultsId/download', async (req, res) => {
     }
     
     // Функция для преобразования типа канала в читаемый статус
-    const getStatusLabel = (type) => {
-      switch (type) {
+    const getStatusLabel = (category) => {
+      switch (category) {
+        // New canonical categories
+        case 'megagroup':
+          return 'Публичный чат';
+        case 'discussion':
+          return 'Обсуждения в каналах';
+        case 'broadcast':
+          return 'Каналы';
+        case 'basic':
+          return 'Обычный чат';
+        case 'other':
+          return 'Прочее';
+        // Legacy category names for backward compatibility
         case 'Megagroup':
           return 'Публичный чат';
         case 'Discussion Group':
@@ -320,22 +344,20 @@ telegramRouter.get('/parsing-results/:resultsId/download', async (req, res) => {
         case 'Broadcast':
           return 'Каналы';
         default:
-          return type || 'Неизвестно';
+          return category || 'Неизвестно';
       }
     };
-    
+
     // Генерируем CSV с разделителем точка с запятой для русской локали Excel
     const channels = resultsData.channels || [];
     const delimiter = ';'; // Точка с запятой для русской локали Excel
     const csvHeader = `Название канала${delimiter}Ссылка на канал${delimiter}Статус${delimiter}Количество подписчиков\n`;
     const csvRows = channels.map(ch => {
       const title = (ch.title || '').replace(/"/g, '""');
-      // Формируем ссылку на канал: если есть username, используем https://t.me/username, иначе используем сохраненный address
-      const link = ch.username 
-        ? `https://t.me/${ch.username}`
-        : (ch.address || '');
+      // Формируем ссылку на канал: используем новый link field или fallback к username
+      const link = ch.link || (ch.username ? `https://t.me/${ch.username}` : (ch.address || ''));
       const linkEscaped = link.replace(/"/g, '""');
-      const status = getStatusLabel(ch.type);
+      const status = getStatusLabel(ch.category || ch.type);
       const statusEscaped = status.replace(/"/g, '""');
       const membersCount = ch.membersCount || 0;
       // Оборачиваем в кавычки только если значение содержит разделитель или кавычки
