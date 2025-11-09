@@ -682,12 +682,15 @@ telegramRouter.get('/audience-results/download-all', async (req, res) => {
 
 // Background parsing job
 telegramRouter.post('/parse', (req, res) => {
-  const { chatId, lastDays = 30, userId, criteria = {}, minActivity = 0 } = req.body || {};
+  const { chatId, peer, lastDays = 30, userId, criteria = {}, minActivity = 0 } = req.body || {};
   if (!userId) return res.status(401).json({ error: 'Unauthorized' });
-  if (!chatId) return res.status(400).json({ error: 'chatId required' });
+  
+  // Accept either legacy chatId (string) or new peer object
+  const chat = peer || chatId;
+  if (!chat) return res.status(400).json({ error: 'chatId or peer required' });
 
   const task = taskManager.enqueue('parse_audience', { 
-    chatId, 
+    chat, 
     lastDays: Number(lastDays), 
     userId,
     criteria,
@@ -707,18 +710,19 @@ telegramRouter.post('/broadcast', (req, res) => {
 
 // Register workers
 taskManager.attachWorker('parse_audience', async (task, manager) => {
-  const { chatId, lastDays, criteria = {}, minActivity = 0, userId } = task.payload;
+  const { chat, lastDays, criteria = {}, minActivity = 0, userId } = task.payload;
   manager.setStatus(task.id, 'running', { progress: 0, message: 'Resolving chat...' });
   try {
-    const { all, active } = await getParticipantsWithActivity(chatId, lastDays, 200, 800, criteria, minActivity);
+    const { all, active } = await getParticipantsWithActivity(chat, lastDays, 200, 800, criteria, minActivity);
     manager.setStatus(task.id, 'running', { progress: 70, current: active.length, total: all.length, message: 'Saving users...' });
     
     // Сохраняем результаты аудитории
     const resultsId = `audience_${Date.now()}_${userId}`;
+    const chatIdForStorage = typeof chat === 'object' ? chat.id : chat;
     const resultsData = {
       id: resultsId,
       userId: userId,
-      chatId: chatId,
+      chatId: chatIdForStorage,
       lastDays: lastDays,
       criteria: criteria,
       minActivity: minActivity,
@@ -739,7 +743,7 @@ taskManager.attachWorker('parse_audience', async (task, manager) => {
     
     writeJson(`audience_results_${resultsId}.json`, resultsData);
     manager.setProgress(task.id, 100, { current: active.length, total: all.length, message: 'Done' });
-    return { chatId, total: all.length, active: active.length, resultsId };
+    return { chatId: chatIdForStorage, total: all.length, active: active.length, resultsId };
   } catch (e) {
     logger.error('parse_audience failed', { error: String(e?.message || e) });
     throw e;

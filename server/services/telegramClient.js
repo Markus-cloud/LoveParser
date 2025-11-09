@@ -434,6 +434,29 @@ export async function getAuthStatus() {
   }
 }
 
+// Convert peer metadata to GramJS InputPeer
+function peerToInputPeer(peer) {
+  if (!peer || !peer.id) {
+    throw new Error('Invalid peer: missing id');
+  }
+  
+  const peerId = typeof peer.id === 'bigint' ? peer.id : BigInt(peer.id);
+  const accessHash = typeof peer.accessHash === 'bigint' ? peer.accessHash : BigInt(peer.accessHash || 0);
+  
+  if (peer.type === 'Channel') {
+    return new Api.InputPeerChannel({
+      channelId: peerId,
+      accessHash: accessHash
+    });
+  } else if (peer.type === 'Chat') {
+    return new Api.InputPeerChat({
+      chatId: peerId
+    });
+  } else {
+    throw new Error(`Unknown peer type: ${peer.type}`);
+  }
+}
+
 export async function ensureClient() {
   return getClient();
 }
@@ -556,6 +579,10 @@ export async function searchChannels(query, minMembers = 0, maxMembers = Infinit
               }
               
               if (shouldInclude) {
+                // Extract peer metadata for later use
+                const accessHashValue = chat.accessHash?.value || chat.accessHash || 0;
+                const accessHashString = typeof accessHashValue === 'bigint' ? String(accessHashValue) : String(accessHashValue);
+                
                 channels.push({
                   id: chatIdString,
                   title: title,
@@ -563,7 +590,12 @@ export async function searchChannels(query, minMembers = 0, maxMembers = Infinit
                   address: username ? `@${username}` : `tg://resolve?domain=${chatIdString}`,
                   membersCount: membersCountNumber,
                   description: description,
-                  type: channelType
+                  type: channelType,
+                  peer: {
+                    id: chatIdString,
+                    accessHash: accessHashString,
+                    type: chat.className === 'Channel' ? 'Channel' : 'Chat'
+                  }
                 });
               }
             }
@@ -600,14 +632,33 @@ export async function getParticipantsWithActivity(chat, lastDays = 30, chunk = 2
     minActivity 
   });
   
-  // resolve entity
+  // resolve entity - handle both string and peer object
   let entity;
   try {
-    entity = await tg.getEntity(chat);
-    const entityId = entity?.id?.value || entity?.id;
+    // If chat is a peer object with id/accessHash/type, convert to InputPeer
+    if (typeof chat === 'object' && chat.id && chat.type) {
+      try {
+        entity = peerToInputPeer(chat);
+        const entityId = chat.id;
+        const entityIdString = typeof entityId === 'bigint' ? String(entityId) : String(entityId);
+        logger.info('Entity created from peer object', { 
+          entityType: chat.type,
+          entityId: entityIdString
+        });
+      } catch (peerErr) {
+        logger.warn('Failed to convert peer to InputPeer, trying getEntity', { error: String(peerErr?.message || peerErr) });
+        // Fallback to getEntity
+        entity = await tg.getEntity(chat.id);
+      }
+    } else {
+      // Legacy: resolve string chat identifier
+      entity = await tg.getEntity(chat);
+    }
+    
+    const entityId = entity?.id?.value || entity?.id || (typeof chat === 'object' ? chat.id : null);
     const entityIdString = typeof entityId === 'bigint' ? String(entityId) : (entityId ? String(entityId) : null);
     logger.info('Entity resolved', { 
-      entityType: entity?.className,
+      entityType: entity?.className || (typeof chat === 'object' ? chat.type : 'unknown'),
       entityId: entityIdString
     });
   } catch (e) {
