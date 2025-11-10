@@ -280,8 +280,10 @@ telegramRouter.post('/search-channels', async (req, res) => {
     // Устанавливаем фильтры по типам каналов (по умолчанию все включены)
     const filters = channelTypes || {
       megagroup: true,
-      discussionGroup: true,
-      broadcast: true
+      discussion: true,
+      broadcast: true,
+      basic: true,
+      other: false
     };
     
     const channels = await searchChannels(query, min, max, searchLimit, filters);
@@ -442,8 +444,20 @@ telegramRouter.get('/parsing-results/download-all', async (req, res) => {
           const channels = normalizedData.channels || [];
           
           // Функция для преобразования типа канала в читаемый статус
-          const getStatusLabel = (type) => {
-            switch (type) {
+          const getStatusLabel = (category) => {
+            switch (category) {
+              // New canonical categories
+              case 'megagroup':
+                return 'Публичный чат';
+              case 'discussion':
+                return 'Обсуждения в каналах';
+              case 'broadcast':
+                return 'Каналы';
+              case 'basic':
+                return 'Обычный чат';
+              case 'other':
+                return 'Прочее';
+              // Legacy category names for backward compatibility
               case 'Megagroup':
                 return 'Публичный чат';
               case 'Discussion Group':
@@ -451,7 +465,7 @@ telegramRouter.get('/parsing-results/download-all', async (req, res) => {
               case 'Broadcast':
                 return 'Каналы';
               default:
-                return type || 'Неизвестно';
+                return category || 'Неизвестно';
             }
           };
           
@@ -479,14 +493,10 @@ telegramRouter.get('/parsing-results/download-all', async (req, res) => {
           const csvRows = channels.map(ch => {
             // Basic fields
             const title = (ch.title || '').replace(/"/g, '""');
-            const username = (ch.username || '').replace(/"/g, '""');
-            const link = ch.resolvedLink || '';
+            // Формируем ссылку на канал: используем новый link field или fallback к username
+            const link = ch.link || (ch.username ? `https://t.me/${ch.username}` : (ch.address || ''));
             const linkEscaped = link.replace(/"/g, '""');
-            
-            // Enriched fields
-            const category = (ch.category || '').replace(/"/g, '""');
-            const privacy = (ch.metadata?.privacy || '').replace(/"/g, '""');
-            const status = getStatusLabel(ch.type);
+            const status = getStatusLabel(ch.category || ch.type);
             const statusEscaped = status.replace(/"/g, '""');
             const membersCount = ch.membersCount || 0;
             const description = (ch.description || '').replace(/"/g, '""');
@@ -581,8 +591,20 @@ telegramRouter.get('/parsing-results/:resultsId/download', async (req, res) => {
     const channels = normalizedData.channels || [];
     
     // Функция для преобразования типа канала в читаемый статус
-    const getStatusLabel = (type) => {
-      switch (type) {
+    const getStatusLabel = (category) => {
+      switch (category) {
+        // New canonical categories
+        case 'megagroup':
+          return 'Публичный чат';
+        case 'discussion':
+          return 'Обсуждения в каналах';
+        case 'broadcast':
+          return 'Каналы';
+        case 'basic':
+          return 'Обычный чат';
+        case 'other':
+          return 'Прочее';
+        // Legacy category names for backward compatibility
         case 'Megagroup':
           return 'Публичный чат';
         case 'Discussion Group':
@@ -590,10 +612,10 @@ telegramRouter.get('/parsing-results/:resultsId/download', async (req, res) => {
         case 'Broadcast':
           return 'Каналы';
         default:
-          return type || 'Неизвестно';
+          return category || 'Неизвестно';
       }
     };
-    
+
     // Генерируем CSV с разделителем точка с запятой для русской локали Excel
     const delimiter = ';'; // Точка с запятой для русской локали Excel
     
@@ -619,14 +641,10 @@ telegramRouter.get('/parsing-results/:resultsId/download', async (req, res) => {
     const csvRows = channels.map(ch => {
       // Basic fields
       const title = (ch.title || '').replace(/"/g, '""');
-      const username = (ch.username || '').replace(/"/g, '""');
-      const link = ch.resolvedLink || '';
+      // Формируем ссылку на канал: используем новый link field или fallback к username
+      const link = ch.link || (ch.username ? `https://t.me/${ch.username}` : (ch.address || ''));
       const linkEscaped = link.replace(/"/g, '""');
-      
-      // Enriched fields
-      const category = (ch.category || '').replace(/"/g, '""');
-      const privacy = (ch.metadata?.privacy || '').replace(/"/g, '""');
-      const status = getStatusLabel(ch.type);
+      const status = getStatusLabel(ch.category || ch.type);
       const statusEscaped = status.replace(/"/g, '""');
       const membersCount = ch.membersCount || 0;
       const description = (ch.description || '').replace(/"/g, '""');
