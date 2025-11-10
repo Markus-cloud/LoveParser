@@ -11,6 +11,12 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { useApi } from "@/lib/api";
 import { useAuth } from "@/context/AuthContext";
 
+interface Peer {
+  id: string;
+  accessHash: string;
+  type: string;
+}
+
 interface Channel {
   id: string;
   title: string;
@@ -20,6 +26,7 @@ interface Channel {
   type?: string;
   parsingResultId?: string;
   parsingResultName?: string;
+  peer?: Peer;
 }
 
 interface AudienceResult {
@@ -104,17 +111,22 @@ export default function Audience() {
       return;
     }
 
-    // Определяем chatId из выбранного канала или ссылки
-    let chatId: string | undefined;
+    // Determine what to send - prefer peer object from parsed results, fallback to manual link
+    let chat: Peer | string | undefined;
     
     if (selectedChannel) {
-      // Используем username, если доступен, иначе id
-      chatId = selectedChannel.username || selectedChannel.id;
+      // For selected channel, use peer data if available, otherwise construct from id
+      if (selectedChannel.peer) {
+        chat = selectedChannel.peer;
+      } else {
+        // Fallback if peer data not available (legacy)
+        chat = selectedChannel.username || selectedChannel.id;
+      }
     } else if (chatLink) {
-      // Извлекаем chatId из ссылки
+      // For manual links, extract identifier and send as string (legacy)
       const match = chatLink.match(/(?:https?:\/\/)?(?:t\.me\/|@)(\w+)/);
       if (match) {
-        chatId = match[1];
+        chat = match[1];
       } else {
         toast({
           title: "Ошибка",
@@ -125,7 +137,7 @@ export default function Audience() {
       }
     }
 
-    if (!chatId) {
+    if (!chat) {
       toast({
         title: "Ошибка",
         description: "Выберите канал или введите ссылку",
@@ -139,13 +151,21 @@ export default function Audience() {
     setEngagementRate(0);
 
     try {
-      const response = await api.post('/telegram/parse', {
-        chatId: chatId,
+      const requestBody: Record<string, unknown> = {
         lastDays: Number(lastDays) || 30,
         criteria: criteria,
         minActivity: Number(minActivity) || 0,
         userId: user.id
-      }) as { taskId: string };
+      };
+      
+      // Send peer object if available, otherwise send as legacy chatId
+      if (typeof chat === 'object' && chat.id) {
+        requestBody.peer = chat;
+      } else {
+        requestBody.chatId = chat;
+      }
+      
+      const response = await api.post('/telegram/parse', requestBody) as { taskId: string };
 
       // Отслеживаем прогресс задачи через SSE
       const API_BASE_URL = import.meta.env.VITE_API_URL || '/api';
