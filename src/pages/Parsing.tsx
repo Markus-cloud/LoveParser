@@ -13,16 +13,23 @@ import { useAuth } from "@/context/AuthContext";
 
 interface Channel {
   id: string | number;
+  accessHash?: string;
   title: string;
-  address: string;
+  link?: string | null;
   username?: string;
   membersCount: number;
+  onlineCount?: number;
   description?: string;
+  category?: string;
   type?: string;
-  peer?: string;
+  verified?: boolean;
+  scam?: boolean;
   isPrivate?: boolean;
-  isVerified?: boolean;
-  inviteLink?: string;
+  peer?: {
+    id: string;
+    accessHash: string;
+    type: string;
+  };
 }
 
 interface ParsingResult {
@@ -60,8 +67,10 @@ export default function Parsing() {
   const [maxMembers, setMaxMembers] = useState("");
   const [channelFilters, setChannelFilters] = useState({
     megagroup: true,      // Публичный чат - для парсинга аудитории
-    discussionGroup: true, // Обсуждения в каналах - для парсинга аудитории
-    broadcast: true       // Каналы - для анализа каналов
+    discussion: true, // Обсуждения в каналах - для парсинга аудитории
+    broadcast: true,      // Каналы - для анализа каналов
+    basic: true,          // Обычные чаты
+    other: false          // Прочие
   });
 
   // Tokenize keywords from input
@@ -360,10 +369,10 @@ export default function Parsing() {
                     <p className="text-xs text-muted-foreground/70 mt-0.5">Для парсинга аудитории</p>
                   </div>
                   <Switch 
-                    checked={channelFilters.discussionGroup} 
+                    checked={channelFilters.discussion} 
                     onCheckedChange={checked => setChannelFilters({
                       ...channelFilters,
-                      discussionGroup: checked
+                      discussion: checked
                     })} 
                   />
                 </div>
@@ -457,34 +466,22 @@ export default function Parsing() {
                   </TableHeader>
                   <TableBody>
                     {selectedResult.channels.map((channel, idx) => {
-                      const getCategoryLabel = (type?: string) => {
-                        switch (type) {
-                          case 'Megagroup':
-                            return 'Публичный чат';
-                          case 'Discussion Group':
-                            return 'Обсуждения в каналах';
-                          case 'Broadcast':
-                            return 'Каналы';
-                          default:
-                            return type || 'Неизвестно';
-                        }
-                      };
-
-                      const getCategoryColor = (type?: string) => {
-                        switch (type) {
-                          case 'Megagroup':
-                            return 'bg-blue-500/20 text-blue-400 border-blue-500/30';
-                          case 'Discussion Group':
-                            return 'bg-green-500/20 text-green-400 border-green-500/30';
-                          case 'Broadcast':
-                            return 'bg-purple-500/20 text-purple-400 border-purple-500/30';
-                          default:
-                            return 'bg-gray-500/20 text-gray-400 border-gray-500/30';
-                        }
-                      };
-
-                      const isPublicChannel = !!channel.username;
-                      const isVerified = channel.isVerified || false;
+                       const getStatusLabel = (category?: string) => {
+                         switch (category) {
+                           case 'megagroup':
+                             return 'Публичный чат';
+                           case 'discussion':
+                             return 'Обсуждения в каналах';
+                           case 'broadcast':
+                             return 'Каналы';
+                           case 'basic':
+                             return 'Обычный чат';
+                           case 'other':
+                             return 'Прочее';
+                           default:
+                             return category || 'Неизвестно';
+                         }
+                       };
                       
                       return (
                         <TableRow 
@@ -502,44 +499,22 @@ export default function Parsing() {
                             </div>
                           </TableCell>
                           <TableCell>
-                            {isPublicChannel ? (
-                              <a 
-                                href={`https://t.me/${channel.username}`}
+                            {channel.link ? (
+                              <a
+                                href={channel.link}
                                 target="_blank"
                                 rel="noopener noreferrer"
                                 className="text-primary hover:underline transition-colors flex items-center gap-1"
                               >
-                                <span>@{channel.username}</span>
-                                <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
-                                </svg>
+                                {channel.username ? `@${channel.username}` : channel.id}
                               </a>
                             ) : (
-                              <div className="flex items-center gap-2">
-                                <span className="text-muted-foreground text-sm">
-                                  {channel.address || `ID: ${channel.id}`}
-                                </span>
-                                <button
-                                  onClick={() => {
-                                    navigator.clipboard.writeText(String(channel.id));
-                                    toast({
-                                      title: "Скопировано",
-                                      description: "ID канала скопирован в буфер обмена",
-                                    });
-                                  }}
-                                  className="text-muted-foreground hover:text-foreground transition-colors"
-                                  title="Скопировать ID"
-                                >
-                                  <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
-                                  </svg>
-                                </button>
-                              </div>
+                              <span className="text-muted-foreground">ID: {channel.id}</span>
                             )}
                           </TableCell>
                           <TableCell>
-                            <span className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium border ${getCategoryColor(channel.type)}`}>
-                              {getCategoryLabel(channel.type)}
+                            <span className="text-sm text-muted-foreground">
+                              {getStatusLabel(channel.category || channel.type)}
                             </span>
                           </TableCell>
                           <TableCell>
