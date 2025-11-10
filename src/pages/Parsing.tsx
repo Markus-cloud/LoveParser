@@ -13,12 +13,23 @@ import { useAuth } from "@/context/AuthContext";
 
 interface Channel {
   id: string | number;
+  accessHash?: string;
   title: string;
-  address: string;
+  link?: string | null;
   username?: string;
   membersCount: number;
+  onlineCount?: number;
   description?: string;
+  category?: string;
   type?: string;
+  verified?: boolean;
+  scam?: boolean;
+  isPrivate?: boolean;
+  peer?: {
+    id: string;
+    accessHash: string;
+    type: string;
+  };
 }
 
 interface ParsingResult {
@@ -55,8 +66,10 @@ export default function Parsing() {
   const [maxMembers, setMaxMembers] = useState("");
   const [channelFilters, setChannelFilters] = useState({
     megagroup: true,      // Публичный чат - для парсинга аудитории
-    discussionGroup: true, // Обсуждения в каналах - для парсинга аудитории
-    broadcast: true       // Каналы - для анализа каналов
+    discussion: true, // Обсуждения в каналах - для парсинга аудитории
+    broadcast: true,      // Каналы - для анализа каналов
+    basic: true,          // Обычные чаты
+    other: false          // Прочие
   });
 
   const loadSavedResults = async () => {
@@ -295,10 +308,10 @@ export default function Parsing() {
                     <p className="text-xs text-muted-foreground/70 mt-0.5">Для парсинга аудитории</p>
                   </div>
                   <Switch 
-                    checked={channelFilters.discussionGroup} 
+                    checked={channelFilters.discussion} 
                     onCheckedChange={checked => setChannelFilters({
                       ...channelFilters,
-                      discussionGroup: checked
+                      discussion: checked
                     })} 
                   />
                 </div>
@@ -375,18 +388,22 @@ export default function Parsing() {
                   </TableHeader>
                   <TableBody>
                     {selectedResult.channels.map((channel, idx) => {
-                      const getStatusLabel = (type?: string) => {
-                        switch (type) {
-                          case 'Megagroup':
-                            return 'Публичный чат';
-                          case 'Discussion Group':
-                            return 'Обсуждения в каналах';
-                          case 'Broadcast':
-                            return 'Каналы';
-                          default:
-                            return type || 'Неизвестно';
-                        }
-                      };
+                       const getStatusLabel = (category?: string) => {
+                         switch (category) {
+                           case 'megagroup':
+                             return 'Публичный чат';
+                           case 'discussion':
+                             return 'Обсуждения в каналах';
+                           case 'broadcast':
+                             return 'Каналы';
+                           case 'basic':
+                             return 'Обычный чат';
+                           case 'other':
+                             return 'Прочее';
+                           default:
+                             return category || 'Неизвестно';
+                         }
+                       };
                       
                       return (
                         <TableRow 
@@ -395,22 +412,22 @@ export default function Parsing() {
                         >
                           <TableCell className="font-medium">{channel.title}</TableCell>
                           <TableCell>
-                            {channel.username ? (
-                              <a 
-                                href={`https://t.me/${channel.username}`}
+                            {channel.link ? (
+                              <a
+                                href={channel.link}
                                 target="_blank"
                                 rel="noopener noreferrer"
                                 className="text-primary hover:underline transition-colors"
                               >
-                                {channel.address}
+                                {channel.username ? `@${channel.username}` : channel.id}
                               </a>
                             ) : (
-                              <span className="text-muted-foreground">{channel.address}</span>
+                              <span className="text-muted-foreground">ID: {channel.id}</span>
                             )}
                           </TableCell>
                           <TableCell>
                             <span className="text-sm text-muted-foreground">
-                              {getStatusLabel(channel.type)}
+                              {getStatusLabel(channel.category || channel.type)}
                             </span>
                           </TableCell>
                           <TableCell className="text-right font-medium">

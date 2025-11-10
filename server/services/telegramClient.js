@@ -455,130 +455,308 @@ export async function searchDialogs(query, limit = 20) {
   });
 }
 
-export async function searchChannels(query, minMembers = 0, maxMembers = Infinity, limit = 100, channelTypes = { megagroup: true, discussionGroup: true, broadcast: true }) {
+/**
+ * Determines the canonical category of a chat based on GramJS flags
+ */
+function determineChannelCategory(chat) {
+  if (chat.className === 'Chat') {
+    // Regular chat groups
+    return 'basic';
+  }
+  
+  if (chat.className === 'Channel') {
+    // Check if this is a discussion group (has linkedChatId)
+    if (chat.linkedChatId || (chat.flags && (chat.flags & 0x00400000) !== 0)) {
+      return 'discussion';
+    }
+    
+    // Check if gigagroup
+    if (chat.gigagroup === true || (chat.flags && (chat.flags & 0x00008000) !== 0)) {
+      return 'megagroup';
+    }
+    
+    // Check if megagroup
+    if (chat.megagroup === true || (chat.flags && (chat.flags & 0x00000001) !== 0)) {
+      return 'megagroup';
+    }
+    
+    // Check if broadcast
+    if (chat.broadcast === true || (chat.flags && (chat.flags & 0x00000002) !== 0)) {
+      return 'broadcast';
+    }
+  }
+  
+  return 'other';
+}
+
+/**
+ * Tokenizes and normalizes search query into keywords
+ */
+function tokenizeQuery(query) {
+  if (!query || !query.trim()) {
+    return [];
+  }
+  
+  // Split by comma, newline, or multiple spaces
+  return query
+    .split(/[,\n]+/)
+    .flatMap(part => part.split(/\s{2,}/).map(token => token.trim()))
+    .filter(token => token.length > 0);
+}
+
+/**
+ * Extracts or resolves proper InputPeer and captures accessHash
+ */
+async function resolveInputPeerAndHash(tg, chat) {
+  try {
+    // Try to get the input entity for this chat
+    const inputEntity = await tg.getInputEntity(chat);
+    
+    // Extract ID and accessHash from the resolved entity
+    let chatId = chat.id?.value || chat.id;
+    chatId = typeof chatId === 'bigint' ? String(chatId.value || chatId) : String(chatId);
+    
+    let accessHash = null;
+    let type = 'unknown';
+    
+    if (inputEntity.className === 'InputChannel') {
+      accessHash = String(inputEntity.accessHash?.value || inputEntity.accessHash || 0);
+      type = 'channel';
+    } else if (inputEntity.className === 'InputPeerChannel') {
+      accessHash = String(inputEntity.accessHash?.value || inputEntity.accessHash || 0);
+      type = 'channel';
+    } else if (inputEntity.className === 'InputChat') {
+      type = 'chat';
+    } else if (inputEntity.className === 'InputPeerChat') {
+      type = 'chat';
+    }
+    
+    return {
+      id: chatId,
+      accessHash: accessHash,
+      type: type,
+      inputEntity: inputEntity
+    };
+  } catch (e) {
+    // Fallback: extract what we can from the chat object
+    let chatId = chat.id?.value || chat.id;
+    chatId = typeof chatId === 'bigint' ? String(chatId.value || chatId) : String(chatId);
+    
+    const accessHash = String(chat.accessHash?.value || chat.accessHash || 0);
+    const type = chat.className === 'Channel' ? 'channel' : 'chat';
+    
+    return {
+      id: chatId,
+      accessHash: accessHash,
+      type: type,
+      inputEntity: chat
+    };
+  }
+}
+
+/**
+ * Fetches full chat information including metadata
+ */
+async function fetchFullChatInfo(tg, chat, peerInfo) {
+  const result = {
+    description: '',
+    membersCount: 0,
+    verified: false,
+    scam: false,
+    username: null,
+    inviteLink: null,
+    onlineCount: 0
+  };
+  
+  try {
+    if (chat.className === 'Channel') {
+      const fullChannel = await tg.invoke(
+        new Api.channels.GetFullChannel({ channel: peerInfo.inputEntity })
+      );
+      
+      const fullChat = fullChannel.fullChat;
+      result.description = fullChat?.about || '';
+      
+      const countValue = fullChat?.participantsCount?.value || fullChat?.participantsCount || 0;
+      result.membersCount = typeof countValue === 'bigint' ? Number(countValue) : Number(countValue);
+      
+      result.verified = fullChat?.verified || false;
+      result.scam = fullChat?.scam || false;
+      result.onlineCount = fullChat?.onlineMemberCount?.value || fullChat?.onlineMemberCount || 0;
+      
+      // Try to get exported invite link
+      if (fullChannel.exportedInvite) {
+        result.inviteLink = fullChannel.exportedInvite.link || null;
+      }
+    } else if (chat.className === 'Chat') {
+      const fullChat = await tg.invoke(
+        new Api.messages.GetFullChat({ chatId: Number(peerInfo.id) })
+      );
+      
+      const chatData = fullChat.fullChat;
+      result.description = chatData?.about || '';
+      result.membersCount = chatData?.participants?.length || 0;
+      result.verified = false;
+      result.scam = false;
+    }
+  } catch (e) {
+    const errorMsg = String(e?.message || e);
+    // Graceful fallback for FLOOD or PRIVATE errors
+    if (!errorMsg.includes('FLOOD') && !errorMsg.includes('PRIVATE')) {
+      logger.warn('Could not fetch full chat info', { 
+        error: errorMsg, 
+        chatId: peerInfo.id 
+      });
+    }
+    
+    // Use basic chat data as fallback
+    const countValue = chat.participantsCount?.value || chat.participantsCount || 0;
+    result.membersCount = typeof countValue === 'bigint' ? Number(countValue) : Number(countValue);
+  }
+  
+  return result;
+}
+
+/**
+ * Generates normalized link for a chat
+ */
+function generateNormalizedLink(chat, peerInfo) {
+  // For public entities with username, return https://t.me/<username>
+  if (chat.username) {
+    return {
+      link: `https://t.me/${chat.username}`,
+      isPrivate: false
+    };
+  }
+  
+  // For private entities, return null for link and surface the numeric id separately
+  return {
+    link: null,
+    isPrivate: true
+  };
+}
+
+export async function searchChannels(query, minMembers = 0, maxMembers = Infinity, limit = 100, channelTypes = { megagroup: true, discussion: true, broadcast: true, basic: true, other: false }) {
   const tg = await ensureClient();
   
   try {
-    // Поиск через contacts.Search
-    const result = await tg.invoke(
-      new Api.contacts.Search({ q: query, limit: Math.min(limit * 2, 200) })
-    );
+    // Tokenize the query into individual keywords
+    const tokens = tokenizeQuery(query);
+    const allChats = new Map(); // Map to deduplicate by chat ID
+    const maxRequestsPerToken = 2; // Respect rate limits
+    let totalRequests = 0;
     
-    const channels = [];
-    const chats = result.chats || [];
-    
-    // Фильтруем только каналы и получаем полную информацию
-    for (const chat of chats) {
+    // Execute search per token
+    for (const token of tokens) {
+      if (totalRequests >= maxRequestsPerToken * Math.min(tokens.length, 5)) {
+        // Cap total requests to respect Telegram rate limits
+        logger.warn('Reached request limit, stopping searches', { 
+          token, 
+          totalRequests 
+        });
+        break;
+      }
+      
       try {
-        // Проверяем, что это канал
-        if (chat.className === 'Channel' || chat.className === 'Chat') {
-          let fullInfo = null;
-          let participantsCount = 0;
-          let username = null;
-          
-          try {
-            // Получаем полную информацию о канале
-            if (chat.className === 'Channel') {
-              const fullChannel = await tg.invoke(
-                new Api.channels.GetFullChannel({ channel: chat })
-              );
-              fullInfo = fullChannel.fullChat;
-              const participantsCountValue = fullInfo?.participantsCount?.value || fullInfo?.participantsCount || 0;
-              participantsCount = typeof participantsCountValue === 'bigint' ? Number(participantsCountValue) : Number(participantsCountValue);
-              username = chat.username || null;
-            } else if (chat.className === 'Chat') {
-              const chatId = chat.id?.value || chat.id;
-              const chatIdString = typeof chatId === 'bigint' ? String(chatId) : String(chatId);
-              const fullChat = await tg.invoke(
-                new Api.messages.GetFullChat({ chatId: Number(chatIdString) })
-              );
-              fullInfo = fullChat.fullChat;
-              participantsCount = fullInfo?.participants?.length || 0;
+        const searchLimit = Math.min(limit * 2, 200);
+        const result = await tg.invoke(
+          new Api.contacts.Search({ q: token, limit: searchLimit })
+        );
+        
+        totalRequests += 1;
+        
+        const chats = result.chats || [];
+        
+        // Collect and deduplicate results
+        for (const chat of chats) {
+          if (chat.className === 'Channel' || chat.className === 'Chat') {
+            const chatId = typeof chat.id === 'bigint' ? String(chat.id.value || chat.id) : String(chat.id?.value || chat.id);
+            
+            if (!allChats.has(chatId)) {
+              allChats.set(chatId, chat);
             }
-          } catch (e) {
-            // Если не удалось получить полную информацию, используем базовые данные
-            const participantsCountValue = chat.participantsCount?.value || chat.participantsCount || 0;
-            participantsCount = typeof participantsCountValue === 'bigint' ? Number(participantsCountValue) : Number(participantsCountValue);
-            username = chat.username || null;
-            const chatId = chat.id?.value || chat.id;
-            const chatIdString = typeof chatId === 'bigint' ? String(chatId) : String(chatId);
-            logger.warn('Could not get full channel info', { error: String(e?.message || e), chatId: chatIdString });
           }
-          
-          // Фильтруем по количеству участников
-          const meetsMinFilter = participantsCount >= minMembers;
-          const meetsMaxFilter = maxMembers === Infinity || participantsCount <= maxMembers;
-          
-          if (meetsMinFilter && meetsMaxFilter) {
-            const title = chat.title || 'Без названия';
-            const description = fullInfo?.about || '';
-            
-            // Проверяем, содержит ли название или описание ключевые слова
-            const searchLower = query.toLowerCase();
-            const titleLower = title.toLowerCase();
-            const descLower = description.toLowerCase();
-            
-            if (titleLower.includes(searchLower) || descLower.includes(searchLower) || !query.trim()) {
-              // Преобразуем BigInt в строку для сериализации JSON
-              const chatId = chat.id?.value || chat.id;
-              const chatIdString = typeof chatId === 'bigint' ? String(chatId) : String(chatId);
-              const membersCountNumber = typeof participantsCount === 'bigint' ? Number(participantsCount) : Number(participantsCount);
-              
-              // Определяем тип канала
-              let channelType = chat.className;
-              if (chat.className === 'Channel') {
-                // Проверяем свойства канала (broadcast и megagroup могут быть булевыми свойствами)
-                const isMegagroup = chat.megagroup === true || (chat.flags && (chat.flags & 0x00000001) !== 0);
-                const isBroadcast = chat.broadcast === true || (chat.flags && (chat.flags & 0x00000002) !== 0);
-                
-                if (isMegagroup) {
-                  channelType = 'Megagroup';
-                } else if (isBroadcast) {
-                  channelType = 'Broadcast';
-                } else {
-                  channelType = 'Channel';
-                }
-              } else if (chat.className === 'Chat') {
-                channelType = 'Discussion Group';
-              }
-              
-              // Применяем фильтры по типам каналов
-              let shouldInclude = false;
-              if (channelType === 'Megagroup' && channelTypes.megagroup) {
-                shouldInclude = true;
-              } else if (channelType === 'Discussion Group' && channelTypes.discussionGroup) {
-                shouldInclude = true;
-              } else if (channelType === 'Broadcast' && channelTypes.broadcast) {
-                shouldInclude = true;
-              } else if (channelType !== 'Megagroup' && channelType !== 'Discussion Group' && channelType !== 'Broadcast') {
-                // Если тип не определен, включаем по умолчанию
-                shouldInclude = true;
-              }
-              
-              if (shouldInclude) {
-                channels.push({
-                  id: chatIdString,
-                  title: title,
-                  username: username,
-                  address: username ? `@${username}` : `tg://resolve?domain=${chatIdString}`,
-                  membersCount: membersCountNumber,
-                  description: description,
-                  type: channelType
-                });
-              }
-            }
-            
-            // Ограничиваем количество результатов
-            if (channels.length >= limit) break;
-          }
-          
-          // Небольшая задержка для избежания flood limit
-          await sleep(100);
         }
+        
+        // Small delay to avoid flood limits
+        await sleep(100);
       } catch (e) {
-        const chatId = chat.id?.value || chat.id;
-        const chatIdString = typeof chatId === 'bigint' ? String(chatId) : String(chatId);
-        logger.warn('Error processing channel', { error: String(e?.message || e), chatId: chatIdString });
+        const errorMsg = String(e?.message || e);
+        // Gracefully fall back on FLOOD or PRIVATE errors
+        if (errorMsg.includes('FLOOD')) {
+          logger.warn('FLOOD error during search, backing off', { token });
+          await sleep(500);
+        } else if (errorMsg.includes('PRIVATE')) {
+          logger.warn('PRIVATE error during search', { token });
+        } else {
+          logger.warn('Error searching for token', { token, error: errorMsg });
+        }
+      }
+    }
+    
+    // Process collected chats
+    const channels = [];
+    
+    for (const [chatId, chat] of allChats.entries()) {
+      try {
+        // Determine canonical category
+        const category = determineChannelCategory(chat);
+        
+        // Strictly enforce category filters - if disabled, exclude
+        if (!channelTypes[category]) {
+          continue;
+        }
+        
+        // Resolve peer info and access hash
+        const peerInfo = await resolveInputPeerAndHash(tg, chat);
+        
+        // Fetch full chat information
+        const fullInfo = await fetchFullChatInfo(tg, chat, peerInfo);
+        
+        // Apply member count filters
+        const meetsMinFilter = fullInfo.membersCount >= minMembers;
+        const meetsMaxFilter = maxMembers === Infinity || fullInfo.membersCount <= maxMembers;
+        
+        if (!meetsMinFilter || !meetsMaxFilter) {
+          continue;
+        }
+        
+        // Generate normalized link
+        const { link, isPrivate } = generateNormalizedLink(chat, peerInfo);
+        
+        // Build result object with all required metadata
+        channels.push({
+          id: peerInfo.id,
+          accessHash: peerInfo.accessHash,
+          title: chat.title || 'Без названия',
+          username: chat.username || null,
+          link: link,
+          isPrivate: isPrivate,
+          membersCount: fullInfo.membersCount,
+          onlineCount: fullInfo.onlineCount,
+          description: fullInfo.description,
+          category: category,
+          verified: fullInfo.verified,
+          scam: fullInfo.scam,
+          peer: {
+            id: peerInfo.id,
+            accessHash: peerInfo.accessHash,
+            type: peerInfo.type
+          }
+        });
+        
+        // Stop when we reach the limit
+        if (channels.length >= limit) {
+          break;
+        }
+        
+        // Rate limiting
+        await sleep(100);
+      } catch (e) {
+        logger.warn('Error processing chat', { 
+          error: String(e?.message || e), 
+          chatId 
+        });
         continue;
       }
     }
