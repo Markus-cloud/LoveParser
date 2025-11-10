@@ -27,3 +27,11 @@ dist-ssr
 .env
 .env.local
 .env.*.local
+
+# Vercel
+.vercel
+
+# Server data and sessions
+server/data/*.json
+server/data/*.session
+!server/data/.gitkeep
