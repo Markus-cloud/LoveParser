@@ -5,8 +5,8 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { Search, Download, FileSpreadsheet, Loader2, Filter } from "lucide-react";
-import { useState, useEffect } from "react";
+import { Search, Download, FileSpreadsheet, Loader2, Filter, X } from "lucide-react";
+import { useState, useEffect, useMemo } from "react";
 import { useToast } from "@/hooks/use-toast";
 import { useApi } from "@/lib/api";
 import { useAuth } from "@/context/AuthContext";
@@ -45,6 +45,7 @@ interface ParsingResultData {
   id: string;
   userId: string;
   query: string;
+  keywords?: string[];
   minMembers: number;
   maxMembers: number | null;
   channels: Channel[];
@@ -61,7 +62,7 @@ export default function Parsing() {
   const [selectedResult, setSelectedResult] = useState<ParsingResultData | null>(null);
   const [loadingResult, setLoadingResult] = useState(false);
   
-  const [searchQuery, setSearchQuery] = useState("");
+  const [keywordsInput, setKeywordsInput] = useState("");
   const [minMembers, setMinMembers] = useState("");
   const [maxMembers, setMaxMembers] = useState("");
   const [channelFilters, setChannelFilters] = useState({
@@ -71,6 +72,24 @@ export default function Parsing() {
     basic: true,          // Обычные чаты
     other: false          // Прочие
   });
+
+  // Tokenize keywords from input
+  const keywords = useMemo(() => {
+    if (!keywordsInput.trim()) return [];
+    
+    return keywordsInput
+      .split(/[,\n]+/)
+      .map(keyword => keyword.trim())
+      .filter(keyword => keyword.length > 0)
+      .filter((keyword, index, arr) => arr.indexOf(keyword) === index); // deduplicate
+  }, [keywordsInput]);
+
+  // Check if form is valid
+  const isFormValid = useMemo(() => {
+    const hasKeywords = keywords.length > 0;
+    const hasActiveFilters = channelFilters.megagroup || channelFilters.discussionGroup || channelFilters.broadcast;
+    return hasKeywords && hasActiveFilters;
+  }, [keywords, channelFilters]);
 
   const loadSavedResults = async () => {
     try {
@@ -99,6 +118,15 @@ export default function Parsing() {
       return;
     }
 
+    if (!isFormValid) {
+      toast({
+        title: "Ошибка валидации",
+        description: "Добавьте ключевые слова и выберите хотя бы одну категорию",
+        variant: "destructive",
+      });
+      return;
+    }
+
     setIsLoading(true);
     setSelectedResult(null);
 
@@ -107,12 +135,16 @@ export default function Parsing() {
       const max = maxMembers ? Number(maxMembers) : Infinity;
       
       const response = await api.post('/telegram/search-channels', {
-        query: searchQuery,
-        minMembers: min,
-        maxMembers: max === Infinity ? undefined : max,
-        limit: 100,
-        userId: user.id,
-        channelTypes: channelFilters
+        keywords: keywords,
+        filters: {
+          minMembers: min,
+          maxMembers: max === Infinity ? undefined : max,
+          channelTypes: channelFilters
+        },
+        limits: {
+          limit: 100
+        },
+        userId: user.id
       }) as { results: Channel[], resultsId: string, count: number };
 
       // Обновляем список сохранённых результатов
@@ -123,7 +155,7 @@ export default function Parsing() {
       
       toast({
         title: "Парсинг завершён",
-        description: `Найдено ${response.count} каналов. Результаты сохранены.`,
+        description: `Найдено ${response.count} каналов по ключевым словам: ${keywords.join(', ')}. Результаты сохранены.`,
       });
     } catch (e: unknown) {
       const errorMessage = e instanceof Error ? e.message : 'Неизвестная ошибка';
@@ -251,13 +283,42 @@ export default function Parsing() {
           <div className="space-y-4">
             <div>
               <Label>Ключевые слова</Label>
-              <Input 
-                placeholder="Введите ключевые слова для поиска"
-                className="glass-card border-white/20 mt-1"
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-              />
-              <p className="text-xs text-muted-foreground mt-1">Например: технологии, бизнес, криптовалюты</p>
+              <div className="space-y-2">
+                <textarea
+                  placeholder="Введите ключевые слова через запятую или новую строку"
+                  className="w-full min-h-[80px] p-3 rounded-lg glass-card border-white/20 bg-white/10 backdrop-blur-sm text-sm resize-none focus:outline-none focus:ring-2 focus:ring-primary/50"
+                  value={keywordsInput}
+                  onChange={(e) => setKeywordsInput(e.target.value)}
+                />
+                {keywords.length > 0 && (
+                  <div className="flex flex-wrap gap-2">
+                    {keywords.map((keyword, index) => (
+                      <div
+                        key={index}
+                        className="inline-flex items-center gap-1 px-2 py-1 bg-primary/20 text-primary rounded-full text-xs font-medium"
+                      >
+                        {keyword}
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const newKeywords = keywords.filter((_, i) => i !== index);
+                            setKeywordsInput(newKeywords.join(', '));
+                          }}
+                          className="ml-1 hover:bg-primary/30 rounded-full p-0.5 transition-colors"
+                        >
+                          <X className="w-3 h-3" />
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+                <p className="text-xs text-muted-foreground">
+                  {keywords.length === 0 
+                    ? "Например: технологии, бизнес, криптовалюты" 
+                    : `Найдено ${keywords.length} ключев${keywords.length === 1 ? 'ое слово' : keywords.length < 5 ? 'ых слова' : 'ых слов'} для поиска`
+                  }
+                </p>
+              </div>
             </div>
 
             <div className="grid grid-cols-2 gap-4">
@@ -329,12 +390,25 @@ export default function Parsing() {
                   />
                 </div>
               </div>
+              
+              {/* Inline validation message */}
+              {keywords.length > 0 && !channelFilters.megagroup && !channelFilters.discussionGroup && !channelFilters.broadcast && (
+                <div className="mt-3 p-2 bg-destructive/10 border border-destructive/20 rounded-lg">
+                  <p className="text-xs text-destructive">
+                    Выберите хотя бы одну категорию для поиска
+                  </p>
+                </div>
+              )}
             </GlassCard>
 
             <Button 
               onClick={handleParsing}
-              disabled={isLoading}
+              disabled={isLoading || !isFormValid}
               className="w-full bg-gradient-to-r from-primary to-accent hover:opacity-90 glow-effect mt-6"
+              title={!isFormValid ? 
+                (keywords.length === 0 ? "Добавьте ключевые слова" : "Выберите хотя бы одну категорию") 
+                : "Начать поиск каналов"
+              }
             >
               {isLoading ? (
                 <>
@@ -357,13 +431,16 @@ export default function Parsing() {
             <div className="flex items-center justify-between mb-4">
               <div>
                 <h3 className="text-lg font-semibold">Результаты поиска ({selectedResult.channels.length})</h3>
-                {selectedResult.query && (
-                  <p className="text-sm text-muted-foreground mt-1">
-                    Запрос: "{selectedResult.query}"
-                    {selectedResult.minMembers > 0 && ` • От ${selectedResult.minMembers} участников`}
-                    {selectedResult.maxMembers && ` • До ${selectedResult.maxMembers} участников`}
-                  </p>
-                )}
+                <p className="text-sm text-muted-foreground mt-1">
+                  {selectedResult.keywords && selectedResult.keywords.length > 0 
+                    ? `Ключевые слова: ${selectedResult.keywords.join(', ')}`
+                    : selectedResult.query 
+                      ? `Запрос: "${selectedResult.query}"`
+                      : 'Поиск без ключевых слов'
+                  }
+                  {selectedResult.minMembers > 0 && ` • От ${selectedResult.minMembers} участников`}
+                  {selectedResult.maxMembers && ` • До ${selectedResult.maxMembers} участников`}
+                </p>
               </div>
               <Button 
                 size="sm" 
@@ -382,7 +459,8 @@ export default function Parsing() {
                     <TableRow className="border-white/10 hover:bg-transparent">
                       <TableHead className="text-muted-foreground font-semibold">Название канала</TableHead>
                       <TableHead className="text-muted-foreground font-semibold">Адрес</TableHead>
-                      <TableHead className="text-muted-foreground font-semibold">Статус</TableHead>
+                      <TableHead className="text-muted-foreground font-semibold">Категория</TableHead>
+                      <TableHead className="text-muted-foreground font-semibold">Тип</TableHead>
                       <TableHead className="text-right text-muted-foreground font-semibold">Участников</TableHead>
                     </TableRow>
                   </TableHeader>
@@ -410,14 +488,23 @@ export default function Parsing() {
                           key={channel.id || idx}
                           className="border-white/10 hover:bg-white/10 transition-colors"
                         >
-                          <TableCell className="font-medium">{channel.title}</TableCell>
+                          <TableCell className="font-medium">
+                            <div className="flex items-center gap-2">
+                              {channel.title}
+                              {isVerified && (
+                                <div className="w-4 h-4 bg-blue-500 rounded-full flex items-center justify-center" title="Подтверждённый канал">
+                                  <span className="text-white text-xs">✓</span>
+                                </div>
+                              )}
+                            </div>
+                          </TableCell>
                           <TableCell>
                             {channel.link ? (
                               <a
                                 href={channel.link}
                                 target="_blank"
                                 rel="noopener noreferrer"
-                                className="text-primary hover:underline transition-colors"
+                                className="text-primary hover:underline transition-colors flex items-center gap-1"
                               >
                                 {channel.username ? `@${channel.username}` : channel.id}
                               </a>
@@ -429,6 +516,14 @@ export default function Parsing() {
                             <span className="text-sm text-muted-foreground">
                               {getStatusLabel(channel.category || channel.type)}
                             </span>
+                          </TableCell>
+                          <TableCell>
+                            <div className="flex items-center gap-2">
+                              <div className={`w-2 h-2 rounded-full ${isPublicChannel ? 'bg-green-500' : 'bg-orange-500'}`} />
+                              <span className="text-sm text-muted-foreground">
+                                {isPublicChannel ? 'Публичный' : 'Приватный'}
+                              </span>
+                            </div>
                           </TableCell>
                           <TableCell className="text-right font-medium">
                             {channel.membersCount.toLocaleString('ru-RU')}
