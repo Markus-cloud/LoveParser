@@ -50,7 +50,7 @@ const enrichedTestData = {
     limit: 50,
     channelTypes: {
       megagroup: true,
-      discussionGroup: false,
+      discussion: false,
       broadcast: true
     }
   },
@@ -321,7 +321,7 @@ function normalizeParsingResults(resultsData) {
       limit: 100,
       channelTypes: {
         megagroup: true,
-        discussionGroup: true,
+        discussion: true,
         broadcast: true
       }
     },
@@ -444,7 +444,7 @@ async function runTests() {
         case 'Megagroup':
           return 'Публичный чат';
         case 'Discussion Group':
-          return 'Обсуждения в каналах';
+          return 'Каналы с комментариями';
         case 'Broadcast':
           return 'Каналы';
         default:
@@ -514,14 +514,14 @@ async function runTests() {
         case 'Megagroup':
           return 'Публичный чат';
         case 'Discussion Group':
-          return 'Обсуждения в каналах';
+          return 'Каналы с комментариями';
         case 'Broadcast':
           return 'Каналы';
         default:
           return type || 'Неизвестно';
       }
     };
-    
+
     const csvRow = channels.map(ch => {
       const title = (ch.title || '').replace(/"/g, '""');
       const username = (ch.username || '').replace(/"/g, '""');

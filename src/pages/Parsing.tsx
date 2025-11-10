@@ -87,7 +87,7 @@ export default function Parsing() {
   // Check if form is valid
   const isFormValid = useMemo(() => {
     const hasKeywords = keywords.length > 0;
-    const hasActiveFilters = channelFilters.megagroup || channelFilters.discussionGroup || channelFilters.broadcast;
+    const hasActiveFilters = channelFilters.megagroup || channelFilters.discussion || channelFilters.broadcast;
     return hasKeywords && hasActiveFilters;
   }, [keywords, channelFilters]);
 
@@ -365,7 +365,7 @@ export default function Parsing() {
                 </div>
                 <div className="flex items-center justify-between">
                   <div>
-                    <span className="text-muted-foreground">Обсуждения в каналах</span>
+                    <span className="text-muted-foreground">Каналы с комментариями</span>
                     <p className="text-xs text-muted-foreground/70 mt-0.5">Для парсинга аудитории</p>
                   </div>
                   <Switch 
@@ -392,7 +392,7 @@ export default function Parsing() {
               </div>
               
               {/* Inline validation message */}
-              {keywords.length > 0 && !channelFilters.megagroup && !channelFilters.discussionGroup && !channelFilters.broadcast && (
+              {keywords.length > 0 && !channelFilters.megagroup && !channelFilters.discussion && !channelFilters.broadcast && (
                 <div className="mt-3 p-2 bg-destructive/10 border border-destructive/20 rounded-lg">
                   <p className="text-xs text-destructive">
                     Выберите хотя бы одну категорию для поиска
@@ -467,21 +467,21 @@ export default function Parsing() {
                   <TableBody>
                     {selectedResult.channels.map((channel, idx) => {
                        const getStatusLabel = (category?: string) => {
-                         switch (category) {
-                           case 'megagroup':
-                             return 'Публичный чат';
-                           case 'discussion':
-                             return 'Обсуждения в каналах';
-                           case 'broadcast':
-                             return 'Каналы';
-                           case 'basic':
-                             return 'Обычный чат';
-                           case 'other':
-                             return 'Прочее';
-                           default:
-                             return category || 'Неизвестно';
-                         }
-                       };
+                          switch (category) {
+                            case 'megagroup':
+                              return 'Публичный чат';
+                            case 'discussion':
+                              return 'Каналы с комментариями';
+                            case 'broadcast':
+                              return 'Каналы';
+                            case 'basic':
+                              return 'Обычный чат';
+                            case 'other':
+                              return 'Прочее';
+                            default:
+                              return category || 'Неизвестно';
+                          }
+                        };
                       
                       return (
                         <TableRow 
@@ -491,7 +491,7 @@ export default function Parsing() {
                           <TableCell className="font-medium">
                             <div className="flex items-center gap-2">
                               {channel.title}
-                              {isVerified && (
+                              {channel.verified && (
                                 <div className="w-4 h-4 bg-blue-500 rounded-full flex items-center justify-center" title="Подтверждённый канал">
                                   <span className="text-white text-xs">✓</span>
                                 </div>
