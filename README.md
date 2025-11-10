@@ -109,6 +109,37 @@ TELEGRAM_BOT_TOKEN=123456:abc...
 
 ## How can I deploy this project?
 
+### Deploy to Vercel
+
+1. **Push to GitHub:**
+   ```bash
+   git add .
+   git commit -m "Ready for Vercel deployment"
+   git push origin main
+   ```
+
+2. **Import to Vercel:**
+   - Go to [vercel.com](https://vercel.com)
+   - Click "New Project"
+   - Import your GitHub repository
+   - Vercel will automatically detect the framework (Vite)
+
+3. **Set Environment Variables:**
+   In Vercel dashboard → Project Settings → Environment Variables:
+   ```
+   TELEGRAM_API_ID=your_api_id_here
+   TELEGRAM_API_HASH=your_api_hash_here
+   NODE_ENV=production
+   ```
+
+4. **Deploy:**
+   - Click "Deploy"
+   - Vercel will build and deploy both frontend and backend
+
+**Important:** Get `TELEGRAM_API_ID` and `TELEGRAM_API_HASH` from https://my.telegram.org
+
+### Alternative: Lovable Deploy
+
 Simply open [Lovable](https://lovable.dev/projects/87928ba7-e238-48e3-96f7-ec279aaae53e) and click on Share -> Publish.
 
 ## Can I connect a custom domain to my Lovable project?

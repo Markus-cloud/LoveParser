@@ -60,9 +60,15 @@ app.use('/api/*', (_req, res) => {
   res.status(404).json({ error: 'API endpoint not found' });
 });
 
-app.listen(PORT, () => {
-  console.log(`[server] Listening on http://localhost:${PORT}`);
-  console.log(`[server] Health check: http://localhost:${PORT}/api/health`);
-});
+// Export for Vercel serverless functions
+export default app;
+
+// Run server locally (not on Vercel)
+if (process.env.NODE_ENV !== 'production') {
+  app.listen(PORT, () => {
+    console.log(`[server] Listening on http://localhost:${PORT}`);
+    console.log(`[server] Health check: http://localhost:${PORT}/api/health`);
+  });
+}
 
 

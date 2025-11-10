@@ -56,8 +56,9 @@ export default function Login() {
 
       toast.success("Код подтверждения отправлен в Telegram");
       setStep("code");
-    } catch (error: any) {
-      toast.error(error.message || "Ошибка отправки кода");
+    } catch (error: unknown) {
+      const errorMessage = error instanceof Error ? error.message : "Ошибка отправки кода";
+      toast.error(errorMessage);
       console.error("Send code error:", error);
     } finally {
       setLoading(false);
@@ -117,8 +118,9 @@ export default function Login() {
       } else {
         throw new Error("Не удалось получить данные пользователя");
       }
-    } catch (error: any) {
-      toast.error(error.message || "Ошибка авторизации");
+    } catch (error: unknown) {
+      const errorMessage = error instanceof Error ? error.message : "Ошибка авторизации";
+      toast.error(errorMessage);
       console.error("Sign in error:", error);
     } finally {
       setLoading(false);
