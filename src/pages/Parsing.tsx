@@ -519,9 +519,9 @@ export default function Parsing() {
                           </TableCell>
                           <TableCell>
                             <div className="flex items-center gap-2">
-                              <div className={`w-2 h-2 rounded-full ${isPublicChannel ? 'bg-green-500' : 'bg-orange-500'}`} />
+                              <div className={`w-2 h-2 rounded-full ${!channel.isPrivate ? 'bg-green-500' : 'bg-orange-500'}`} />
                               <span className="text-sm text-muted-foreground">
-                                {isPublicChannel ? 'Публичный' : 'Приватный'}
+                                {!channel.isPrivate ? 'Публичный' : 'Приватный'}
                               </span>
                             </div>
                           </TableCell>
