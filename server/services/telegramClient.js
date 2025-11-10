@@ -488,12 +488,16 @@ function determineChannelCategory(chat) {
   }
   
   if (chat.className === 'Channel') {
-    // Check if this is a discussion group (has linkedChatId)
-    if (chat.linkedChatId || (chat.flags && (chat.flags & 0x00400000) !== 0)) {
+    // Check if this is a discussion group (has linkedChatId or discussion flag)
+    // linkedChatId is the most reliable indicator
+    const hasLinkedChatId = chat.linkedChatId || (typeof chat.linkedChatId === 'number' && chat.linkedChatId > 0);
+    const hasDiscussionFlag = chat.flags && (chat.flags & 0x00400000) !== 0;
+    
+    if (hasLinkedChatId || hasDiscussionFlag) {
       return 'discussion';
     }
     
-    // Check if gigagroup
+    // Check if gigagroup (must come before megagroup check)
     if (chat.gigagroup === true || (chat.flags && (chat.flags & 0x00008000) !== 0)) {
       return 'megagroup';
     }
@@ -503,7 +507,7 @@ function determineChannelCategory(chat) {
       return 'megagroup';
     }
     
-    // Check if broadcast
+    // Check if broadcast (channels without discussion functionality)
     if (chat.broadcast === true || (chat.flags && (chat.flags & 0x00000002) !== 0)) {
       return 'broadcast';
     }

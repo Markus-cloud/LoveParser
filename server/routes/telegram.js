@@ -266,6 +266,11 @@ telegramRouter.post('/search', async (req, res) => {
 
 // Search channels with filters
 telegramRouter.post('/search-channels', async (req, res) => {
+  logger.info('search-channels received request', { 
+    body: req.body,
+    userId: req.body?.userId
+  });
+
   // Support both old format (backward compatibility) and new format
   const { 
     // New format
@@ -282,6 +287,7 @@ telegramRouter.post('/search-channels', async (req, res) => {
   } = req.body || {};
   
   if (!userId) {
+    logger.warn('search-channels called without userId');
     return res.status(401).json({ error: 'Unauthorized' });
   }
   
@@ -299,12 +305,12 @@ telegramRouter.post('/search-channels', async (req, res) => {
       other: false
     };
     
-    logger.info('search-channels request', { 
+    logger.info('search-channels parameters extracted', { 
       keywords: searchKeywords, 
       min, 
       max: max === Infinity ? 'unlimited' : max, 
       limit: searchLimit, 
-      channelTypes: channelFilters,
+      channelFilters: channelFilters,
       userId 
     });
     
@@ -315,45 +321,80 @@ telegramRouter.post('/search-channels', async (req, res) => {
     for (const keyword of searchKeywords) {
       if (!keyword || !keyword.trim()) continue;
       
-      const channels = await searchChannels(keyword.trim(), min, max, searchLimit, channelFilters);
+      logger.info('searching for keyword', { keyword, filters: channelFilters });
       
-      // Add channels avoiding duplicates
-      for (const channel of channels) {
-        const channelId = String(channel.id);
-        if (!processedIds.has(channelId)) {
-          processedIds.add(channelId);
-          allChannels.push(channel);
+      try {
+        const channels = await searchChannels(keyword.trim(), min, max, searchLimit, channelFilters);
+        
+        logger.info('search completed for keyword', { 
+          keyword, 
+          resultsCount: channels.length,
+          categories: channels.map(c => c.category)
+        });
+        
+        // Add channels avoiding duplicates
+        for (const channel of channels) {
+          const channelId = String(channel.id);
+          if (!processedIds.has(channelId)) {
+            processedIds.add(channelId);
+            allChannels.push(channel);
+          }
         }
+      } catch (keywordError) {
+        logger.error('error searching for keyword', { 
+          keyword, 
+          error: String(keywordError?.message || keywordError) 
+        });
+        throw keywordError;
       }
     }
     
+    logger.info('all keywords processed', { 
+      totalChannels: allChannels.length,
+      keywords: searchKeywords 
+    });
+    
     // Сохраняем результаты для пользователя с обогащенной структурой
     const resultsId = `parsing_${Date.now()}_${userId}`;
-    
-    // Extract keywords from query (split by spaces, remove empty strings)
-    const keywords = query.trim() ? query.trim().split(/\s+/).filter(k => k.length > 0) : [];
-    
+
+    // Extract keywords from input (use provided keywords or split query)
+    const queryKeywords = searchKeywords.filter(k => k && k.trim());
+
     const resultsData = {
       id: resultsId,
       userId: userId,
       query: query,
-      keywords: keywords,
+      keywords: queryKeywords,
       searchFilters: {
         minMembers: min,
         maxMembers: max === Infinity ? null : max,
         limit: searchLimit,
-        channelTypes: filters
+        channelTypes: channelFilters
       },
-      channels: channels,
+      channels: allChannels,
       timestamp: new Date().toISOString(),
-      count: channels.length,
+      count: allChannels.length,
       version: '2.0', // Version for backward compatibility
       enriched: true // Flag to indicate enriched data
     };
-    
+
+    logger.info('saving parsing results', {
+      resultsId,
+      channelsCount: allChannels.length,
+      categories: allChannels.reduce((acc, ch) => {
+        acc[ch.category] = (acc[ch.category] || 0) + 1;
+        return acc;
+      }, {})
+    });
+
     writeJson(`parsing_results_${resultsId}.json`, resultsData);
-    
-    res.json({ 
+
+    logger.info('parsing results saved successfully', {
+      resultsId,
+      userId
+    });
+
+    res.json({
       results: allChannels,
       resultsId: resultsId,
       count: allChannels.length
@@ -481,37 +522,37 @@ telegramRouter.get('/parsing-results/download-all', async (req, res) => {
           // Normalize the results data for backward compatibility
           const normalizedData = normalizeParsingResults(resultsData);
           const channels = normalizedData.channels || [];
-          
-          // Функция для преобразования типа канала в читаемый статус
-          const getStatusLabel = (category) => {
-            switch (category) {
-              // New canonical categories
-              case 'megagroup':
-                return 'Публичный чат';
-              case 'discussion':
-                return 'Обсуждения в каналах';
-              case 'broadcast':
-                return 'Каналы';
-              case 'basic':
-                return 'Обычный чат';
-              case 'other':
-                return 'Прочее';
-              // Legacy category names for backward compatibility
-              case 'Megagroup':
-                return 'Публичный чат';
-              case 'Discussion Group':
-                return 'Обсуждения в каналах';
-              case 'Broadcast':
-                return 'Каналы';
-              default:
-                return category || 'Неизвестно';
-            }
-          };
-          
-          const delimiter = ';'; // Точка с запятой для русской локали Excel
-          
-          // Enhanced CSV header with additional columns
-          const csvHeader = [
+
+               // Функция для преобразования типа канала в читаемый статус
+                const getStatusLabel = (category) => {
+                  switch (category) {
+                    // New canonical categories
+                    case 'megagroup':
+                      return 'Публичный чат';
+                    case 'discussion':
+                      return 'Каналы с комментариями';
+                    case 'broadcast':
+                      return 'Каналы';
+                    case 'basic':
+                      return 'Обычный чат';
+                    case 'other':
+                      return 'Прочее';
+                    // Legacy category names for backward compatibility
+                    case 'Megagroup':
+                      return 'Публичный чат';
+                    case 'Discussion Group':
+                      return 'Каналы с комментариями';
+                    case 'Broadcast':
+                      return 'Каналы';
+                    default:
+                      return category || 'Неизвестно';
+                  }
+                };
+
+                const delimiter = ';'; // Точка с запятой для русской локали Excel
+
+                // Enhanced CSV header with additional columns
+                const csvHeader = [
             'Название канала',
             'Username', 
             'Ссылка на канал',
@@ -630,32 +671,32 @@ telegramRouter.get('/parsing-results/:resultsId/download', async (req, res) => {
     const channels = normalizedData.channels || [];
     
     // Функция для преобразования типа канала в читаемый статус
-    const getStatusLabel = (category) => {
-      switch (category) {
-        // New canonical categories
-        case 'megagroup':
-          return 'Публичный чат';
-        case 'discussion':
-          return 'Обсуждения в каналах';
-        case 'broadcast':
-          return 'Каналы';
-        case 'basic':
-          return 'Обычный чат';
-        case 'other':
-          return 'Прочее';
-        // Legacy category names for backward compatibility
-        case 'Megagroup':
-          return 'Публичный чат';
-        case 'Discussion Group':
-          return 'Обсуждения в каналах';
-        case 'Broadcast':
-          return 'Каналы';
-        default:
-          return category || 'Неизвестно';
-      }
-    };
+     const getStatusLabel = (category) => {
+       switch (category) {
+         // New canonical categories
+         case 'megagroup':
+           return 'Публичный чат';
+         case 'discussion':
+           return 'Каналы с комментариями';
+         case 'broadcast':
+           return 'Каналы';
+         case 'basic':
+           return 'Обычный чат';
+         case 'other':
+           return 'Прочее';
+         // Legacy category names for backward compatibility
+         case 'Megagroup':
+           return 'Публичный чат';
+         case 'Discussion Group':
+           return 'Каналы с комментариями';
+         case 'Broadcast':
+           return 'Каналы';
+         default:
+           return category || 'Неизвестно';
+       }
+     };
 
-    // Генерируем CSV с разделителем точка с запятой для русской локали Excel
+     // Генерируем CSV с разделителем точка с запятой для русской локали Excel
     const delimiter = ';'; // Точка с запятой для русской локали Excel
     
     // Enhanced CSV header with additional columns

@@ -111,7 +111,7 @@ const enrichedResultsData = {
     limit: 100,
     channelTypes: {
       megagroup: true,
-      discussionGroup: false,
+      discussion: false,
       broadcast: true
     }
   },
@@ -249,7 +249,7 @@ function normalizeParsingResults(resultsData) {
       limit: 100,
       channelTypes: {
         megagroup: true,
-        discussionGroup: true,
+        discussion: true,
         broadcast: true
       }
     },
@@ -285,7 +285,7 @@ function generateCSV(channels) {
       case 'Megagroup':
         return 'Публичный чат';
       case 'Discussion Group':
-        return 'Обсуждения в каналах';
+        return 'Каналы с комментариями';
       case 'Broadcast':
         return 'Каналы';
       default:
