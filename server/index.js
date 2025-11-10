@@ -63,8 +63,11 @@ app.use('/api/*', (_req, res) => {
 // Export for Vercel serverless functions
 export default app;
 
-// Run server locally (not on Vercel)
-if (process.env.NODE_ENV !== 'production') {
+// Run server locally only if this file is executed directly (not imported)
+// Check if the module is the main module by comparing import.meta.url with process.argv[1]
+const isMainModule = process.argv[1] && import.meta.url.endsWith(process.argv[1]);
+
+if (isMainModule && process.env.NODE_ENV !== 'production') {
   app.listen(PORT, () => {
     console.log(`[server] Listening on http://localhost:${PORT}`);
     console.log(`[server] Health check: http://localhost:${PORT}/api/health`);
