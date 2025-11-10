@@ -6,6 +6,203 @@ import { logger, sleep } from '../lib/logger.js';
 
 export const telegramRouter = Router();
 
+/**
+ * Normalizes channel data for backward compatibility
+ * Handles both legacy flat records and new enriched records
+ * @param {Object} channel - Channel object (legacy or enriched)
+ * @returns {Object} Normalized channel object with all required fields
+ */
+function normalizeChannelData(channel) {
+  // Handle null/undefined channel
+  if (!channel) {
+    return {
+      id: '',
+      title: 'Без названия',
+      username: null,
+      address: 'tg://resolve?domain=',
+      membersCount: 0,
+      description: '',
+      type: 'Channel',
+      peer: null,
+      metadata: {
+        isVerified: false,
+        isRestricted: false,
+        isScam: false,
+        isFake: false,
+        isGigagroup: false,
+        hasUsername: false,
+        isPublic: false,
+        privacy: 'private'
+      },
+      category: 'Channel',
+      inviteLink: null,
+      channelMetadata: {
+        linkedChatId: null,
+        canViewParticipants: false,
+        canSetUsername: false,
+        canSetStickers: false,
+        hiddenPrehistory: false,
+        participantsCount: 0,
+        adminsCount: 0,
+        kickedCount: 0,
+        bannedCount: 0,
+        onlineCount: 0,
+        readInboxMaxId: 0,
+        readOutboxMaxId: 0,
+        unreadCount: 0
+      },
+      resolvedLink: null,
+      fullDescription: '',
+      searchableText: '',
+      date: null,
+      hasForwards: false,
+      hasScheduled: false,
+      canDeleteHistory: false,
+      antiSpamEnabled: false,
+      joinToSend: false,
+      requestJoinRequired: false
+    };
+  }
+  
+  // If this is already an enriched record, return as-is with defaults for any missing fields
+  if (channel.enriched || channel.peer || channel.metadata) {
+    return {
+      // Basic fields (always present)
+      id: channel.id || '',
+      title: channel.title || 'Без названия',
+      username: channel.username || null,
+      address: channel.address || (channel.username ? `@${channel.username}` : `tg://resolve?domain=${channel.id}`),
+      membersCount: Number(channel.membersCount) || 0,
+      description: channel.description || '',
+      type: channel.type || 'Channel',
+      
+      // Enriched fields (with defaults for backward compatibility)
+      peer: channel.peer || null,
+      metadata: channel.metadata || {
+        isVerified: false,
+        isRestricted: false,
+        isScam: false,
+        isFake: false,
+        isGigagroup: false,
+        hasUsername: !!channel.username,
+        isPublic: !!channel.username,
+        privacy: channel.username ? 'public' : 'private'
+      },
+      category: channel.category || channel.type || 'Channel',
+      inviteLink: channel.inviteLink || null,
+      channelMetadata: channel.channelMetadata || {
+        linkedChatId: null,
+        canViewParticipants: false,
+        canSetUsername: false,
+        canSetStickers: false,
+        hiddenPrehistory: false,
+        participantsCount: Number(channel.membersCount) || 0,
+        adminsCount: 0,
+        kickedCount: 0,
+        bannedCount: 0,
+        onlineCount: 0,
+        readInboxMaxId: 0,
+        readOutboxMaxId: 0,
+        unreadCount: 0
+      },
+      resolvedLink: channel.resolvedLink || (channel.username ? `https://t.me/${channel.username}` : null),
+      fullDescription: channel.description || '',
+      searchableText: `${channel.title || ''} ${channel.description || ''}`.toLowerCase(),
+      date: channel.date || null,
+      hasForwards: channel.hasForwards || false,
+      hasScheduled: channel.hasScheduled || false,
+      canDeleteHistory: channel.canDeleteHistory || false,
+      antiSpamEnabled: channel.antiSpamEnabled || false,
+      joinToSend: channel.joinToSend || false,
+      requestJoinRequired: channel.requestJoinRequired || false
+    };
+  }
+  
+  // Legacy record - enrich with defaults
+  const username = channel.username || null;
+  return {
+    // Preserve original legacy fields
+    id: channel.id || '',
+    title: channel.title || 'Без названия',
+    username: username,
+    address: channel.address || (username ? `@${username}` : `tg://resolve?domain=${channel.id}`),
+    membersCount: Number(channel.membersCount) || 0,
+    description: channel.description || '',
+    type: channel.type || 'Channel',
+    
+    // Add enriched fields with sensible defaults
+    peer: null,
+    metadata: {
+      isVerified: false,
+      isRestricted: false,
+      isScam: false,
+      isFake: false,
+      isGigagroup: false,
+      hasUsername: !!username,
+      isPublic: !!username,
+      privacy: username ? 'public' : 'private'
+    },
+    category: channel.type || 'Channel',
+    inviteLink: null,
+    channelMetadata: {
+      linkedChatId: null,
+      canViewParticipants: false,
+      canSetUsername: false,
+      canSetStickers: false,
+      hiddenPrehistory: false,
+      participantsCount: channel.membersCount || 0,
+      adminsCount: 0,
+      kickedCount: 0,
+      bannedCount: 0,
+      onlineCount: 0,
+      readInboxMaxId: 0,
+      readOutboxMaxId: 0,
+      unreadCount: 0
+    },
+    resolvedLink: username ? `https://t.me/${username}` : null,
+    fullDescription: channel.description || '',
+    searchableText: `${channel.title || ''} ${channel.description || ''}`.toLowerCase(),
+    date: null,
+    hasForwards: false,
+    hasScheduled: false,
+    canDeleteHistory: false,
+    antiSpamEnabled: false,
+    joinToSend: false,
+    requestJoinRequired: false
+  };
+}
+
+/**
+ * Normalizes parsing results data for backward compatibility
+ * @param {Object} resultsData - Raw results data from storage
+ * @returns {Object} Normalized results data
+ */
+function normalizeParsingResults(resultsData) {
+  if (!resultsData) return resultsData;
+  
+  // Normalize channels array
+  const normalizedChannels = (resultsData.channels || []).map(channel => normalizeChannelData(channel));
+  
+  return {
+    ...resultsData,
+    channels: normalizedChannels,
+    // Add missing fields with defaults for legacy records
+    keywords: resultsData.keywords || (resultsData.query ? [resultsData.query] : []),
+    searchFilters: resultsData.searchFilters || {
+      minMembers: resultsData.minMembers || 0,
+      maxMembers: resultsData.maxMembers || null,
+      limit: 100,
+      channelTypes: {
+        megagroup: true,
+        discussionGroup: true,
+        broadcast: true
+      }
+    },
+    version: resultsData.version || '1.0',
+    enriched: resultsData.enriched || false
+  };
+}
+
 // Authentication endpoints
 telegramRouter.post('/auth/send-code', async (req, res) => {
   const { phoneNumber } = req.body || {};
@@ -91,17 +288,28 @@ telegramRouter.post('/search-channels', async (req, res) => {
     
     const channels = await searchChannels(query, min, max, searchLimit, filters);
     
-    // Сохраняем результаты для пользователя
+    // Сохраняем результаты для пользователя с обогащенной структурой
     const resultsId = `parsing_${Date.now()}_${userId}`;
+    
+    // Extract keywords from query (split by spaces, remove empty strings)
+    const keywords = query.trim() ? query.trim().split(/\s+/).filter(k => k.length > 0) : [];
+    
     const resultsData = {
       id: resultsId,
       userId: userId,
       query: query,
-      minMembers: min,
-      maxMembers: max === Infinity ? null : max,
+      keywords: keywords,
+      searchFilters: {
+        minMembers: min,
+        maxMembers: max === Infinity ? null : max,
+        limit: searchLimit,
+        channelTypes: filters
+      },
       channels: channels,
       timestamp: new Date().toISOString(),
-      count: channels.length
+      count: channels.length,
+      version: '2.0', // Version for backward compatibility
+      enriched: true // Flag to indicate enriched data
     };
     
     writeJson(`parsing_results_${resultsId}.json`, resultsData);
@@ -145,23 +353,29 @@ telegramRouter.get('/parsing-results', async (req, res) => {
       try {
         const resultsData = readJson(file, null);
         if (resultsData && resultsData.userId === userId) {
-          const timestamp = new Date(resultsData.timestamp);
+          // Normalize the results data for backward compatibility
+          const normalizedData = normalizeParsingResults(resultsData);
+          
+          const timestamp = new Date(normalizedData.timestamp);
           const dateStr = timestamp.toLocaleDateString('ru-RU', { day: '2-digit', month: '2-digit', year: 'numeric' });
           const timeStr = timestamp.toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
           
           // Используем ключевые слова из запроса, если они есть, иначе "Результаты поиска"
-          const query = resultsData.query || '';
+          const query = normalizedData.query || '';
           const name = query.trim() 
             ? `${query} ${dateStr} ${timeStr}`
             : `Результаты поиска ${dateStr} ${timeStr}`;
           
           allResults.push({
-            id: resultsData.id,
+            id: normalizedData.id,
             name: name,
             date: dateStr,
-            count: resultsData.count || 0,
-            timestamp: resultsData.timestamp,
-            query: resultsData.query
+            count: normalizedData.count || 0,
+            timestamp: normalizedData.timestamp,
+            query: normalizedData.query,
+            keywords: normalizedData.keywords,
+            enriched: normalizedData.enriched,
+            version: normalizedData.version
           });
         }
       } catch (e) {
@@ -225,6 +439,10 @@ telegramRouter.get('/parsing-results/download-all', async (req, res) => {
       try {
         const resultsData = readJson(file, null);
         if (resultsData && resultsData.userId === userId) {
+          // Normalize the results data for backward compatibility
+          const normalizedData = normalizeParsingResults(resultsData);
+          const channels = normalizedData.channels || [];
+          
           // Функция для преобразования типа канала в читаемый статус
           const getStatusLabel = (category) => {
             switch (category) {
@@ -251,10 +469,29 @@ telegramRouter.get('/parsing-results/download-all', async (req, res) => {
             }
           };
           
-          const channels = resultsData.channels || [];
           const delimiter = ';'; // Точка с запятой для русской локали Excel
-          const csvHeader = `Название канала${delimiter}Ссылка на канал${delimiter}Статус${delimiter}Количество подписчиков\n`;
+          
+          // Enhanced CSV header with additional columns
+          const csvHeader = [
+            'Название канала',
+            'Username', 
+            'Ссылка на канал',
+            'Категория',
+            'Приватность',
+            'Статус',
+            'Количество подписчиков',
+            'Описание',
+            'Проверен',
+            'Ограничен',
+            'Скам',
+            'Поддельный',
+            'Есть ссылка-приглашение',
+            'Онлайн участники',
+            'Админы'
+          ].join(delimiter) + '\n';
+          
           const csvRows = channels.map(ch => {
+            // Basic fields
             const title = (ch.title || '').replace(/"/g, '""');
             // Формируем ссылку на канал: используем новый link field или fallback к username
             const link = ch.link || (ch.username ? `https://t.me/${ch.username}` : (ch.address || ''));
@@ -262,20 +499,47 @@ telegramRouter.get('/parsing-results/download-all', async (req, res) => {
             const status = getStatusLabel(ch.category || ch.type);
             const statusEscaped = status.replace(/"/g, '""');
             const membersCount = ch.membersCount || 0;
-            // Оборачиваем в кавычки только если значение содержит разделитель или кавычки
-            const titleValue = title.includes(delimiter) || title.includes('"') ? `"${title}"` : title;
-            const linkValue = linkEscaped.includes(delimiter) || linkEscaped.includes('"') ? `"${linkEscaped}"` : linkEscaped;
-            const statusValue = statusEscaped.includes(delimiter) || statusEscaped.includes('"') ? `"${statusEscaped}"` : statusEscaped;
-            return `${titleValue}${delimiter}${linkValue}${delimiter}${statusValue}${delimiter}${membersCount}`;
+            const description = (ch.description || '').replace(/"/g, '""');
+            const isVerified = ch.metadata?.isVerified ? 'Да' : 'Нет';
+            const isRestricted = ch.metadata?.isRestricted ? 'Да' : 'Нет';
+            const isScam = ch.metadata?.isScam ? 'Да' : 'Нет';
+            const isFake = ch.metadata?.isFake ? 'Да' : 'Нет';
+            const hasInviteLink = ch.inviteLink ? 'Да' : 'Нет';
+            const onlineCount = ch.channelMetadata?.onlineCount || 0;
+            const adminsCount = ch.channelMetadata?.adminsCount || 0;
+            
+            // Helper function to escape CSV values
+            const escapeCsvValue = (value) => {
+              const strValue = String(value);
+              return strValue.includes(delimiter) || strValue.includes('"') ? `"${strValue}"` : strValue;
+            };
+            
+            return [
+              escapeCsvValue(title),
+              escapeCsvValue(username),
+              escapeCsvValue(linkEscaped),
+              escapeCsvValue(category),
+              escapeCsvValue(privacy),
+              escapeCsvValue(statusEscaped),
+              escapeCsvValue(membersCount),
+              escapeCsvValue(description),
+              escapeCsvValue(isVerified),
+              escapeCsvValue(isRestricted),
+              escapeCsvValue(isScam),
+              escapeCsvValue(isFake),
+              escapeCsvValue(hasInviteLink),
+              escapeCsvValue(onlineCount),
+              escapeCsvValue(adminsCount)
+            ].join(delimiter);
           }).join('\n');
           
           const csv = '\ufeff' + csvHeader + csvRows;
           
           // Формируем имя файла по ключевым словам, как в приложении
-          const timestamp = new Date(resultsData.timestamp);
+          const timestamp = new Date(normalizedData.timestamp);
           const dateStr = timestamp.toLocaleDateString('ru-RU', { day: '2-digit', month: '2-digit', year: 'numeric' });
           const timeStr = timestamp.toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
-          const query = resultsData.query || '';
+          const query = normalizedData.query || '';
           const baseName = query.trim() 
             ? `${query} ${dateStr} ${timeStr}`
             : `Результаты поиска ${dateStr} ${timeStr}`;
@@ -322,6 +586,10 @@ telegramRouter.get('/parsing-results/:resultsId/download', async (req, res) => {
       return res.status(403).json({ error: 'Forbidden' });
     }
     
+    // Normalize the results data for backward compatibility
+    const normalizedData = normalizeParsingResults(resultsData);
+    const channels = normalizedData.channels || [];
+    
     // Функция для преобразования типа канала в читаемый статус
     const getStatusLabel = (category) => {
       switch (category) {
@@ -349,10 +617,29 @@ telegramRouter.get('/parsing-results/:resultsId/download', async (req, res) => {
     };
 
     // Генерируем CSV с разделителем точка с запятой для русской локали Excel
-    const channels = resultsData.channels || [];
     const delimiter = ';'; // Точка с запятой для русской локали Excel
-    const csvHeader = `Название канала${delimiter}Ссылка на канал${delimiter}Статус${delimiter}Количество подписчиков\n`;
+    
+    // Enhanced CSV header with additional columns
+    const csvHeader = [
+      'Название канала',
+      'Username', 
+      'Ссылка на канал',
+      'Категория',
+      'Приватность',
+      'Статус',
+      'Количество подписчиков',
+      'Описание',
+      'Проверен',
+      'Ограничен',
+      'Скам',
+      'Поддельный',
+      'Есть ссылка-приглашение',
+      'Онлайн участники',
+      'Админы'
+    ].join(delimiter) + '\n';
+    
     const csvRows = channels.map(ch => {
+      // Basic fields
       const title = (ch.title || '').replace(/"/g, '""');
       // Формируем ссылку на канал: используем новый link field или fallback к username
       const link = ch.link || (ch.username ? `https://t.me/${ch.username}` : (ch.address || ''));
@@ -360,20 +647,47 @@ telegramRouter.get('/parsing-results/:resultsId/download', async (req, res) => {
       const status = getStatusLabel(ch.category || ch.type);
       const statusEscaped = status.replace(/"/g, '""');
       const membersCount = ch.membersCount || 0;
-      // Оборачиваем в кавычки только если значение содержит разделитель или кавычки
-      const titleValue = title.includes(delimiter) || title.includes('"') ? `"${title}"` : title;
-      const linkValue = linkEscaped.includes(delimiter) || linkEscaped.includes('"') ? `"${linkEscaped}"` : linkEscaped;
-      const statusValue = statusEscaped.includes(delimiter) || statusEscaped.includes('"') ? `"${statusEscaped}"` : statusEscaped;
-      return `${titleValue}${delimiter}${linkValue}${delimiter}${statusValue}${delimiter}${membersCount}`;
+      const description = (ch.description || '').replace(/"/g, '""');
+      const isVerified = ch.metadata?.isVerified ? 'Да' : 'Нет';
+      const isRestricted = ch.metadata?.isRestricted ? 'Да' : 'Нет';
+      const isScam = ch.metadata?.isScam ? 'Да' : 'Нет';
+      const isFake = ch.metadata?.isFake ? 'Да' : 'Нет';
+      const hasInviteLink = ch.inviteLink ? 'Да' : 'Нет';
+      const onlineCount = ch.channelMetadata?.onlineCount || 0;
+      const adminsCount = ch.channelMetadata?.adminsCount || 0;
+      
+      // Helper function to escape CSV values
+      const escapeCsvValue = (value) => {
+        const strValue = String(value);
+        return strValue.includes(delimiter) || strValue.includes('"') ? `"${strValue}"` : strValue;
+      };
+      
+      return [
+        escapeCsvValue(title),
+        escapeCsvValue(username),
+        escapeCsvValue(linkEscaped),
+        escapeCsvValue(category),
+        escapeCsvValue(privacy),
+        escapeCsvValue(statusEscaped),
+        escapeCsvValue(membersCount),
+        escapeCsvValue(description),
+        escapeCsvValue(isVerified),
+        escapeCsvValue(isRestricted),
+        escapeCsvValue(isScam),
+        escapeCsvValue(isFake),
+        escapeCsvValue(hasInviteLink),
+        escapeCsvValue(onlineCount),
+        escapeCsvValue(adminsCount)
+      ].join(delimiter);
     }).join('\n');
     
     const csv = csvHeader + csvRows;
     
     // Формируем имя файла по ключевым словам, как в приложении
-    const timestamp = new Date(resultsData.timestamp);
+    const timestamp = new Date(normalizedData.timestamp);
     const dateStr = timestamp.toLocaleDateString('ru-RU', { day: '2-digit', month: '2-digit', year: 'numeric' });
     const timeStr = timestamp.toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
-    const query = resultsData.query || '';
+    const query = normalizedData.query || '';
     const baseName = query.trim() 
       ? `${query} ${dateStr} ${timeStr}`
       : `Результаты поиска ${dateStr} ${timeStr}`;
@@ -428,13 +742,19 @@ telegramRouter.get('/parsing-results/channels', async (req, res) => {
         const requestUserId = String(userId || '');
         
         if (resultsData && fileUserId === requestUserId && resultsData.channels && Array.isArray(resultsData.channels)) {
+          // Normalize the results data for backward compatibility
+          const normalizedData = normalizeParsingResults(resultsData);
+          
           // Включаем все каналы из результатов парсинга
           // Приоритет отдаем Megagroup и Discussion Group, но показываем все
-          const channelsWithMetadata = resultsData.channels.map(ch => ({
+          const channelsWithMetadata = normalizedData.channels.map(ch => ({
             ...ch,
             // Добавляем информацию о результате парсинга
-            parsingResultId: resultsData.id,
-            parsingResultName: resultsData.query || `Результаты поиска ${new Date(resultsData.timestamp).toLocaleDateString('ru-RU')}`
+            parsingResultId: normalizedData.id,
+            parsingResultName: normalizedData.query || `Результаты поиска ${new Date(normalizedData.timestamp).toLocaleDateString('ru-RU')}`,
+            parsingResultKeywords: normalizedData.keywords,
+            parsingResultEnriched: normalizedData.enriched,
+            parsingResultVersion: normalizedData.version
           }));
           allChannels.push(...channelsWithMetadata);
         }
@@ -481,7 +801,10 @@ telegramRouter.get('/parsing-results/:resultsId', async (req, res) => {
       return res.status(403).json({ error: 'Forbidden' });
     }
     
-    res.json(resultsData);
+    // Normalize the results data for backward compatibility
+    const normalizedData = normalizeParsingResults(resultsData);
+    
+    res.json(normalizedData);
   } catch (e) {
     res.status(500).json({ error: String(e?.message || e) });
   }
