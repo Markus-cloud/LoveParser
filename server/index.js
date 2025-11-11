@@ -64,9 +64,27 @@ app.use('/api/*', (_req, res) => {
 export default app;
 
 // Start server if this file is run directly
-if (import.meta.url === `file://${process.argv[1]}`) {
-  app.listen(PORT, () => {
-    console.log(`[server] Listening on http://localhost:${PORT}`);
+const modulePath = fileURLToPath(import.meta.url);
+const scriptPath = process.argv[1] ? path.resolve(process.argv[1]) : null;
+if (scriptPath && modulePath === scriptPath) {
+  console.log(`[server] Starting server on port ${PORT}...`);
+  const server = app.listen(PORT, () => {
+    console.log(`[server] Server listening on http://localhost:${PORT}`);
     console.log(`[server] Health check: http://localhost:${PORT}/api/health`);
+    console.log(`[server] Ready to accept connections`);
+  });
+
+  server.on('error', (err) => {
+    if (err.code === 'EADDRINUSE') {
+      console.error(`[server] ERROR: Port ${PORT} is already in use`);
+      console.error(`[server] Please either:`);
+      console.error(`[server]   1. Stop the process using port ${PORT}`);
+      console.error(`[server]   2. Set API_PORT environment variable to a different port`);
+      console.error(`[server]   Example: API_PORT=3001 node server/index.js`);
+      process.exit(1);
+    } else {
+      console.error(`[server] ERROR: Failed to start server:`, err);
+      process.exit(1);
+    }
   });
 }
