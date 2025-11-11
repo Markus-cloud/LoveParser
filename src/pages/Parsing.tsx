@@ -8,7 +8,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Search, Download, FileSpreadsheet, Loader2, Filter, X } from "lucide-react";
 import { useState, useEffect, useMemo } from "react";
 import { useToast } from "@/hooks/use-toast";
-import { useApi } from "@/lib/api";
+import { useApi, apiDownload } from "@/lib/api";
 import { useAuth } from "@/context/AuthContext";
 
 interface Channel {
@@ -190,22 +190,7 @@ export default function Parsing() {
 
   const handleDownload = async (resultsId: string) => {
     try {
-      const API_BASE_URL = import.meta.env.VITE_API_URL || '/api';
-      const userId = user?.id;
-      const url = `${API_BASE_URL}/telegram/parsing-results/${resultsId}/download?userId=${userId}`;
-      
-      const response = await fetch(url);
-      if (!response.ok) throw new Error('Failed to download');
-      
-      const blob = await response.blob();
-      const downloadUrl = window.URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = downloadUrl;
-      a.download = `channels_${resultsId}.csv`;
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
-      window.URL.revokeObjectURL(downloadUrl);
+      await apiDownload(`/telegram/parsing-results/${resultsId}/download`, user?.id);
       
       toast({
         title: "Успешно",
@@ -233,22 +218,7 @@ export default function Parsing() {
 
   const handleDownloadAll = async () => {
     try {
-      const API_BASE_URL = import.meta.env.VITE_API_URL || '/api';
-      const userId = user?.id;
-      const url = `${API_BASE_URL}/telegram/parsing-results/download-all?userId=${userId}`;
-      
-      const response = await fetch(url);
-      if (!response.ok) throw new Error('Failed to download');
-      
-      const blob = await response.blob();
-      const downloadUrl = window.URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = downloadUrl;
-      a.download = `all_parsing_results_${Date.now()}.zip`;
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
-      window.URL.revokeObjectURL(downloadUrl);
+      await apiDownload(`/telegram/parsing-results/download-all`, user?.id);
       
       toast({
         title: "Успешно",

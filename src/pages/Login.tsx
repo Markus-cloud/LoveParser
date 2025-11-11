@@ -7,6 +7,7 @@ import { Label } from "@/components/ui/label";
 import { useAuth } from "@/context/AuthContext";
 import { Phone, Lock, Loader2 } from "lucide-react";
 import { toast } from "sonner";
+import { apiFetch } from "@/lib/api";
 
 export default function Login() {
   const [phoneNumber, setPhoneNumber] = useState("");
@@ -41,18 +42,10 @@ export default function Login() {
 
     setLoading(true);
     try {
-      const apiUrl = import.meta.env.VITE_API_URL || '/api';
-      const response = await fetch(`${apiUrl}/telegram/auth/send-code`, {
+      const data = await apiFetch('/telegram/auth/send-code', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ phoneNumber: phoneNumber.replace(/\D/g, "") }),
-      });
-
-      const data = await response.json();
-
-      if (!response.ok) {
-        throw new Error(data.error || 'Ошибка отправки кода');
-      }
+        body: { phoneNumber: phoneNumber.replace(/\D/g, "") },
+      }) as { error?: string };
 
       toast.success("Код подтверждения отправлен в Telegram");
       setStep("code");
@@ -75,30 +68,13 @@ export default function Login() {
 
     setLoading(true);
     try {
-      const apiUrl = import.meta.env.VITE_API_URL || '/api';
-      const response = await fetch(`${apiUrl}/telegram/auth/sign-in`, {
+      const data = await apiFetch('/telegram/auth/sign-in', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ 
+        body: { 
           phoneCode: code,
           password: needsPassword ? password : undefined,
-        }),
-      });
-
-      const data = await response.json();
-
-      if (!response.ok) {
-        // Проверяем, требуется ли пароль 2FA
-        const errorMsg = data.error || '';
-        if (errorMsg.includes('Password required') || errorMsg.includes('password') || errorMsg.includes('2FA') || errorMsg.includes('PASSWORD')) {
-          if (!needsPassword) {
-            setNeedsPassword(true);
-            toast.info("Требуется пароль двухфакторной аутентификации");
-            return;
-          }
-        }
-        throw new Error(data.error || 'Ошибка авторизации');
-      }
+        },
+      }) as { success?: boolean; user?: { id: string | number; username?: string; firstName?: string; lastName?: string }; error?: string };
 
       if (data.success && data.user) {
         // Преобразуем данные пользователя в нужный формат
@@ -120,6 +96,16 @@ export default function Login() {
       }
     } catch (error: unknown) {
       const errorMessage = error instanceof Error ? error.message : "Ошибка авторизации";
+      
+      // Проверяем, требуется ли пароль 2FA
+      if (errorMessage.includes('Password required') || errorMessage.includes('password') || errorMessage.includes('2FA') || errorMessage.includes('PASSWORD')) {
+        if (!needsPassword) {
+          setNeedsPassword(true);
+          toast.info("Требуется пароль двухфакторной аутентификации");
+          return;
+        }
+      }
+      
       toast.error(errorMessage);
       console.error("Sign in error:", error);
     } finally {
