@@ -228,5 +228,113 @@
     "message": "Done",
     "current": 0,
     "total": 1
+  },
+  "f012dfa1-b0e9-44f3-922e-061cd28bd91b": {
+    "id": "f012dfa1-b0e9-44f3-922e-061cd28bd91b",
+    "type": "parse_audience",
+    "payload": {
+      "lastDays": 30,
+      "userId": "408683910",
+      "criteria": {
+        "likes": true,
+        "comments": true,
+        "reposts": true,
+        "frequency": true
+      },
+      "minActivity": 5,
+      "sessionId": "parsing_1762891843887_408683910",
+      "participantsLimit": 10,
+      "bioKeywords": null
+    },
+    "userId": "408683910",
+    "status": "completed",
+    "progress": 100,
+    "result": {
+      "chatId": "parsing_1762891843887_408683910",
+      "totalFound": 0,
+      "active": 0,
+      "resultsId": "audience_1762892207374_408683910",
+      "sessionId": "parsing_1762891843887_408683910",
+      "channelsProcessed": 2,
+      "totalChannels": 2
+    },
+    "error": null,
+    "createdAt": 1762891945303,
+    "updatedAt": 1762892207375,
+    "message": "Done",
+    "current": 0,
+    "total": 10
+  },
+  "de52ae52-271f-40f3-bdf3-47c3f02e7231": {
+    "id": "de52ae52-271f-40f3-bdf3-47c3f02e7231",
+    "type": "parse_audience",
+    "payload": {
+      "lastDays": 30,
+      "userId": "408683910",
+      "criteria": {
+        "likes": true,
+        "comments": true,
+        "reposts": true,
+        "frequency": true
+      },
+      "minActivity": 1,
+      "sessionId": "parsing_1762891843887_408683910",
+      "participantsLimit": 10,
+      "bioKeywords": null
+    },
+    "userId": "408683910",
+    "status": "completed",
+    "progress": 100,
+    "result": {
+      "chatId": "parsing_1762891843887_408683910",
+      "totalFound": 0,
+      "active": 0,
+      "resultsId": "audience_1762892276727_408683910",
+      "sessionId": "parsing_1762891843887_408683910",
+      "channelsProcessed": 2,
+      "totalChannels": 2
+    },
+    "error": null,
+    "createdAt": 1762892276665,
+    "updatedAt": 1762892276728,
+    "message": "Done",
+    "current": 0,
+    "total": 10
+  },
+  "4cef3d0f-992d-4fba-ad84-1dc2661123f3": {
+    "id": "4cef3d0f-992d-4fba-ad84-1dc2661123f3",
+    "type": "parse_audience",
+    "payload": {
+      "lastDays": 68,
+      "userId": "408683910",
+      "criteria": {
+        "likes": false,
+        "comments": true,
+        "reposts": false,
+        "frequency": true
+      },
+      "minActivity": 5,
+      "sessionId": "parsing_1762891843887_408683910",
+      "participantsLimit": 10,
+      "bioKeywords": null
+    },
+    "userId": "408683910",
+    "status": "completed",
+    "progress": 100,
+    "result": {
+      "chatId": "parsing_1762891843887_408683910",
+      "totalFound": 0,
+      "active": 0,
+      "resultsId": "audience_1762892588621_408683910",
+      "sessionId": "parsing_1762891843887_408683910",
+      "channelsProcessed": 2,
+      "totalChannels": 2
+    },
+    "error": null,
+    "createdAt": 1762892588561,
+    "updatedAt": 1762892588622,
+    "message": "Done",
+    "current": 0,
+    "total": 10
   }
 }
