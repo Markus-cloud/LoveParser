@@ -8,7 +8,7 @@ import { Users, TrendingUp, Download, Loader2, FileSpreadsheet } from "lucide-re
 import { useState, useEffect } from "react";
 import { useToast } from "@/hooks/use-toast";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { useApi } from "@/lib/api";
+import { useApi, apiDownload } from "@/lib/api";
 import { useAuth } from "@/context/AuthContext";
 
 interface Peer {
@@ -168,7 +168,10 @@ export default function Audience() {
       const response = await api.post('/telegram/parse', requestBody) as { taskId: string };
 
       // Отслеживаем прогресс задачи через SSE
-      const API_BASE_URL = import.meta.env.VITE_API_URL || '/api';
+      // In production, use relative '/api' to avoid port issues
+      const API_BASE_URL = import.meta.env.PROD 
+        ? '/api' 
+        : (import.meta.env.VITE_API_URL || '/api');
       const eventSource = new EventSource(`${API_BASE_URL}/tasks/${response.taskId}/stream?userId=${encodeURIComponent(user.id)}`);
 
       eventSource.onmessage = (event) => {
@@ -229,22 +232,7 @@ export default function Audience() {
 
   const handleDownload = async (resultsId: string) => {
     try {
-      const API_BASE_URL = import.meta.env.VITE_API_URL || '/api';
-      const userId = user?.id;
-      const url = `${API_BASE_URL}/telegram/audience-results/${resultsId}/download?userId=${userId}`;
-      
-      const response = await fetch(url);
-      if (!response.ok) throw new Error('Failed to download');
-      
-      const blob = await response.blob();
-      const downloadUrl = window.URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = downloadUrl;
-      a.download = `audience_${resultsId}.csv`;
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
-      window.URL.revokeObjectURL(downloadUrl);
+      await apiDownload(`/telegram/audience-results/${resultsId}/download`, user?.id);
       
       toast({
         title: "Успешно",
@@ -262,22 +250,7 @@ export default function Audience() {
 
   const handleDownloadAll = async () => {
     try {
-      const API_BASE_URL = import.meta.env.VITE_API_URL || '/api';
-      const userId = user?.id;
-      const url = `${API_BASE_URL}/telegram/audience-results/download-all?userId=${userId}`;
-      
-      const response = await fetch(url);
-      if (!response.ok) throw new Error('Failed to download');
-      
-      const blob = await response.blob();
-      const downloadUrl = window.URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = downloadUrl;
-      a.download = `all_audience_results_${Date.now()}.zip`;
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
-      window.URL.revokeObjectURL(downloadUrl);
+      await apiDownload(`/telegram/audience-results/download-all`, user?.id);
       
       toast({
         title: "Успешно",

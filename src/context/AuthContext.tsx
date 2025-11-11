@@ -1,4 +1,5 @@
 import React, { createContext, useContext, useEffect, useState } from 'react';
+import { apiFetch } from '@/lib/api';
 
 type User = {
   id: string;
@@ -45,11 +46,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
             const userData = JSON.parse(savedUser);
             
             // Проверяем статус авторизации на сервере
-            const apiUrl = import.meta.env.VITE_API_URL || '/api';
-            const response = await fetch(`${apiUrl}/telegram/auth/status`);
-            
-            if (response.ok) {
-              const status = await response.json();
+            try {
+              const status = await apiFetch('/telegram/auth/status', { method: 'GET' }) as { authenticated: boolean; userId: string | number };
               
               // Сравниваем userId как строки
               if (status.authenticated && String(status.userId) === String(userData.id)) {
@@ -58,15 +56,17 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
                 setLoading(false);
                 return;
               }
+            } catch (error) {
+              console.debug('Session validation error:', error);
             }
           } catch (error) {
-            console.debug('Session validation error:', error);
+            console.debug('JSON parse error:', error);
           }
-        }
 
-        // Если сессия невалидна или отсутствует, очищаем данные
-        localStorage.removeItem(STORAGE_KEY);
-        localStorage.removeItem(SESSION_KEY);
+          // Если сессия невалидна или отсутствует, очищаем данные
+          localStorage.removeItem(STORAGE_KEY);
+          localStorage.removeItem(SESSION_KEY);
+        }
       } catch (error) {
         console.error('Auth check error:', error);
       } finally {
@@ -99,11 +99,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
     // Сохраняем пользователя на сервере через /api/user/login
     try {
-      const apiUrl = import.meta.env.VITE_API_URL || '/api';
-      await fetch(`${apiUrl}/user/login`, {
+      await apiFetch('/user/login', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ user: userPayload }),
+        body: { user: userPayload },
       });
     } catch (error) {
       console.error('Failed to save user on server:', error);
