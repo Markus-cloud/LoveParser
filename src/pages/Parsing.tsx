@@ -16,7 +16,8 @@ interface Channel {
   accessHash?: string;
   title: string;
   link?: string | null;
-  username?: string;
+  username?: string | null;
+  address?: string;
   membersCount: number;
   onlineCount?: number;
   description?: string;
@@ -469,14 +470,14 @@ export default function Parsing() {
                             </div>
                           </TableCell>
                           <TableCell>
-                            {channel.link ? (
+                            {channel.username ? (
                               <a
-                                href={channel.link}
+                                href={channel.link || `https://t.me/${channel.username}`}
                                 target="_blank"
                                 rel="noopener noreferrer"
                                 className="text-primary hover:underline transition-colors flex items-center gap-1"
                               >
-                                {channel.username ? `@${channel.username}` : channel.id}
+                                @{channel.username}
                               </a>
                             ) : (
                               <span className="text-muted-foreground">ID: {channel.id}</span>
