@@ -55,6 +55,19 @@ app.get('/.well-known/*', (_req, res) => {
 // Static files for any future need
 app.use('/static', express.static(path.join(__dirname, 'public')));
 
+// Serve built frontend (if present) to avoid Vite dev client being loaded in production
+const distPath = path.join(__dirname, '..', 'dist');
+if (process.env.NODE_ENV === 'production' || fsExistsSync(distPath)) {
+  app.use(express.static(distPath));
+
+  // Fallback to index.html for SPA routes
+  app.get('*', (_req, res, next) => {
+    // If the request is for an API route, skip to API handlers
+    if (_req.path.startsWith('/api/')) return next();
+    res.sendFile(path.join(distPath, 'index.html'));
+  });
+}
+
 // 404 handler for API routes
 app.use('/api/*', (_req, res) => {
   res.status(404).json({ error: 'API endpoint not found' });
