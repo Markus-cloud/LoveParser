@@ -36,6 +36,23 @@ interface AudienceResult {
   count: number;
   timestamp: string;
   chatId?: string;
+  sessionId?: string | null;
+  version?: string;
+  participantsLimit?: number | null;
+  bioKeywords?: string[] | null;
+  channelsProcessed?: number | null;
+  totalChannels?: number | null;
+}
+
+interface ParsingResult {
+  id: string;
+  name: string;
+  channels: Channel[];
+  count: number;
+  timestamp: string;
+  keywords: string[];
+  enriched?: boolean;
+  version?: string;
 }
 
 export default function Audience() {
@@ -56,8 +73,16 @@ export default function Audience() {
   const [minActivity, setMinActivity] = useState("5");
   const [channels, setChannels] = useState<Channel[]>([]);
   const [audienceFiles, setAudienceFiles] = useState<AudienceResult[]>([]);
+  const [parsingResults, setParsingResults] = useState<ParsingResult[]>([]);
   const [activeCount, setActiveCount] = useState(0);
   const [engagementRate, setEngagementRate] = useState(0);
+  
+  // New state for enhanced features
+  const [selectedSessionId, setSelectedSessionId] = useState<string>("");
+  const [selectedSession, setSelectedSession] = useState<ParsingResult | null>(null);
+  const [participantsLimit, setParticipantsLimit] = useState<string>("");
+  const [bioKeywords, setBioKeywords] = useState<string>("");
+  const [isSessionMode, setIsSessionMode] = useState(false);
 
   const loadChannels = async () => {
     if (!user?.id) {
@@ -88,14 +113,29 @@ export default function Audience() {
     }
   };
 
+  const loadParsingResults = async () => {
+    if (!user?.id) return;
+    
+    try {
+      const response = await api.get('/telegram/parsing-results') as { results: ParsingResult[] };
+      setParsingResults(response.results || []);
+    } catch (e) {
+      console.error('Failed to load parsing results', e);
+      setParsingResults([]);
+    }
+  };
+
   useEffect(() => {
     if (user?.id) {
-      console.log('Audience: User ID changed, loading channels', user.id);
+      console.log('Audience: User ID changed, loading data', user.id);
       loadChannels();
       loadAudienceResults();
+      loadParsingResults();
     } else {
-      console.log('Audience: No user ID, clearing channels');
+      console.log('Audience: No user ID, clearing data');
       setChannels([]);
+      setAudienceFiles([]);
+      setParsingResults([]);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user?.id]);
@@ -111,33 +151,17 @@ export default function Audience() {
       return;
     }
 
-    // Determine what to send - prefer peer object from parsed results, fallback to manual link
-    let chat: Peer | string | undefined;
-    
-    if (selectedChannel) {
-      // For selected channel, use peer data if available, otherwise construct from id
-      if (selectedChannel.peer) {
-        chat = selectedChannel.peer;
-      } else {
-        // Fallback if peer data not available (legacy)
-        chat = selectedChannel.username || selectedChannel.id;
-      }
-    } else if (chatLink) {
-      // For manual links, extract identifier and send as string (legacy)
-      const match = chatLink.match(/(?:https?:\/\/)?(?:t\.me\/|@)(\w+)/);
-      if (match) {
-        chat = match[1];
-      } else {
-        toast({
-          title: "Ошибка",
-          description: "Неверный формат ссылки на канал",
-          variant: "destructive",
-        });
-        return;
-      }
+    // Determine parsing mode and validate inputs
+    if (isSessionMode && !selectedSessionId) {
+      toast({
+        title: "Ошибка",
+        description: "Выберите сессию парсинга",
+        variant: "destructive",
+      });
+      return;
     }
 
-    if (!chat) {
+    if (!isSessionMode && !selectedChannel && !chatLink) {
       toast({
         title: "Ошибка",
         description: "Выберите канал или введите ссылку",
@@ -158,11 +182,66 @@ export default function Audience() {
         userId: user.id
       };
       
-      // Send peer object if available, otherwise send as legacy chatId
-      if (typeof chat === 'object' && chat.id) {
-        requestBody.peer = chat;
+      // Add session-based parsing parameters
+      if (isSessionMode && selectedSessionId) {
+        requestBody.sessionId = selectedSessionId;
+        
+        if (participantsLimit) {
+          requestBody.participantsLimit = Number(participantsLimit);
+        }
+        
+        if (bioKeywords.trim()) {
+          requestBody.bioKeywords = bioKeywords
+            .split(',')
+            .map(k => k.trim())
+            .filter(k => k.length > 0);
+        }
       } else {
-        requestBody.chatId = chat;
+        // Single channel parsing (legacy)
+        let chat: Peer | string | undefined;
+        
+        if (selectedChannel) {
+          // For selected channel, use peer data if available, otherwise construct from id
+          if (selectedChannel.peer) {
+            chat = selectedChannel.peer;
+          } else {
+            // Fallback if peer data not available (legacy)
+            chat = selectedChannel.username || selectedChannel.id;
+          }
+        } else if (chatLink) {
+          // For manual links, extract identifier and send as string (legacy)
+          const match = chatLink.match(/(?:https?:\/\/)?(?:t\.me\/|@)(\w+)/);
+          if (match) {
+            chat = match[1];
+          } else {
+            toast({
+              title: "Ошибка",
+              description: "Неверный формат ссылки на канал",
+              variant: "destructive",
+            });
+            return;
+          }
+        }
+
+        if (chat) {
+          if (typeof chat === 'object' && chat.id) {
+            requestBody.peer = chat;
+          } else {
+            requestBody.chatId = chat;
+          }
+        }
+        
+        // Also support new parameters for single channel parsing
+        if (participantsLimit) {
+          requestBody.participantsLimit = Number(participantsLimit);
+        }
+        
+        if (bioKeywords.trim()) {
+          requestBody.bioKeywords = bioKeywords
+            .split(',')
+            .map(k => k.trim())
+            .filter(k => k.length > 0);
+        }
       }
       
       const response = await api.post('/telegram/parse', requestBody) as { taskId: string };
@@ -186,9 +265,13 @@ export default function Audience() {
           // Обновляем список результатов
           loadAudienceResults();
           
+          const resultMessage = data.result?.sessionId 
+            ? `Найдено ${data.result?.active || 0} пользователей из ${data.result?.totalFound || 0} по ${data.result?.channelsProcessed || 0} каналам`
+            : `Найдено ${data.result?.active || 0} активных пользователей из ${total}`;
+          
           toast({
             title: "Аудитория найдена",
-            description: `Найдено ${data.result?.active || 0} активных пользователей из ${total}`,
+            description: resultMessage,
           });
         } else if (data.status === 'failed') {
           eventSource.close();
@@ -279,45 +362,99 @@ export default function Audience() {
           </div>
 
           <div className="space-y-4">
-            <div>
-              <Label>Выберите базу каналов/чатов {channels.length > 0 && `(${channels.length} каналов)`}</Label>
-              <Select 
-                value={selectedChannelId} 
-                onValueChange={(value) => {
-                  setSelectedChannelId(value);
-                  const channel = channels.find(ch => ch.id === value);
-                  setSelectedChannel(channel || null);
-                }}
-              >
-                <SelectTrigger className="glass-card border-white/20 mt-1">
-                  <SelectValue placeholder="Выберите результаты парсинга" />
-                </SelectTrigger>
-                <SelectContent className="glass-card glass-effect">
-                  {channels.length > 0 ? (
-                    channels.map((channel) => (
-                      <SelectItem key={channel.id} value={channel.id}>
-                        {channel.title} ({channel.membersCount.toLocaleString('ru-RU')}){channel.type ? ` - ${channel.type}` : ''}
+            {/* Mode Selection */}
+            <div className="flex items-center justify-between p-4 rounded-lg bg-primary/5 border border-primary/20">
+              <div className="flex items-center gap-3">
+                <Users className="w-5 h-5 text-primary" />
+                <div>
+                  <h4 className="font-medium">Режим парсинга</h4>
+                  <p className="text-sm text-muted-foreground">Выберите тип анализа аудитории</p>
+                </div>
+              </div>
+              <div className="flex items-center gap-2">
+                <span className={`text-sm ${!isSessionMode ? 'font-medium' : 'text-muted-foreground'}`}>Один канал</span>
+                <Switch 
+                  checked={isSessionMode} 
+                  onCheckedChange={setIsSessionMode}
+                />
+                <span className={`text-sm ${isSessionMode ? 'font-medium' : 'text-muted-foreground'}`}>Сессия</span>
+              </div>
+            </div>
+
+            {/* Session-based parsing inputs */}
+            {isSessionMode ? (
+              <div>
+                <Label>Выберите сессию парсинга {parsingResults.length > 0 && `(${parsingResults.length} сессий)`}</Label>
+                <Select 
+                  value={selectedSessionId} 
+                  onValueChange={(value) => {
+                    setSelectedSessionId(value);
+                    const session = parsingResults.find(s => s.id === value);
+                    setSelectedSession(session || null);
+                  }}
+                >
+                  <SelectTrigger className="glass-card border-white/20 mt-1">
+                    <SelectValue placeholder="Выберите сессию для анализа" />
+                  </SelectTrigger>
+                  <SelectContent className="glass-card glass-effect">
+                    {parsingResults.length > 0 ? (
+                      parsingResults.map((session) => (
+                        <SelectItem key={session.id} value={session.id}>
+                          {session.name} ({session.count} каналов)
+                        </SelectItem>
+                      ))
+                    ) : (
+                      <SelectItem value="empty" disabled>
+                        {user?.id ? 'Нет сохранённых сессий парсинга' : 'Необходима авторизация'}
                       </SelectItem>
-                    ))
-                  ) : (
-                    <SelectItem value="empty" disabled>
-                      {user?.id ? 'Нет сохранённых результатов парсинга' : 'Необходима авторизация'}
-                    </SelectItem>
-                  )}
-                </SelectContent>
-              </Select>
-            </div>
+                    )}
+                  </SelectContent>
+                </Select>
+              </div>
+            ) : (
+              <>
+                <div>
+                  <Label>Выберите канал {channels.length > 0 && `(${channels.length} каналов)`}</Label>
+                  <Select 
+                    value={selectedChannelId} 
+                    onValueChange={(value) => {
+                      setSelectedChannelId(value);
+                      const channel = channels.find(ch => ch.id === value);
+                      setSelectedChannel(channel || null);
+                    }}
+                  >
+                    <SelectTrigger className="glass-card border-white/20 mt-1">
+                      <SelectValue placeholder="Выберите канал" />
+                    </SelectTrigger>
+                    <SelectContent className="glass-card glass-effect">
+                      {channels.length > 0 ? (
+                        channels.map((channel) => (
+                          <SelectItem key={channel.id} value={channel.id}>
+                            {channel.title} ({channel.membersCount.toLocaleString('ru-RU')}){channel.type ? ` - ${channel.type}` : ''}
+                          </SelectItem>
+                        ))
+                      ) : (
+                        <SelectItem value="empty" disabled>
+                          {user?.id ? 'Нет сохранённых каналов' : 'Необходима авторизация'}
+                        </SelectItem>
+                      )}
+                    </SelectContent>
+                  </Select>
+                </div>
 
-            <div>
-              <Label>Ссылка на канал / чат</Label>
-              <Input 
-                placeholder="https://t.me/channelname или @channelname" 
-                className="glass-card border-white/20 mt-1"
-                value={chatLink}
-                onChange={(e) => setChatLink(e.target.value)}
-              />
-            </div>
+                <div>
+                  <Label>Ссылка на канал / чат</Label>
+                  <Input 
+                    placeholder="https://t.me/channelname или @channelname" 
+                    className="glass-card border-white/20 mt-1"
+                    value={chatLink}
+                    onChange={(e) => setChatLink(e.target.value)}
+                  />
+                </div>
+              </>
+            )}
 
+            {/* Enhanced filtering options */}
             <GlassCard className="bg-primary/5 border-primary/20">
               <h4 className="font-semibold text-sm mb-3 flex items-center gap-2">
                 <TrendingUp className="w-4 h-4 text-primary" />
@@ -346,6 +483,38 @@ export default function Audience() {
                 })} />
                 </div>
                 
+              </div>
+            </GlassCard>
+
+            {/* New filtering options */}
+            <GlassCard className="bg-accent/5 border-accent/20">
+              <h4 className="font-semibold text-sm mb-3 flex items-center gap-2">
+                <Users className="w-4 h-4 text-accent" />
+                Дополнительные фильтры
+              </h4>
+              <div className="space-y-4">
+                <div>
+                  <Label>Лимит участников</Label>
+                  <Input 
+                    type="number" 
+                    placeholder="Без лимита" 
+                    className="glass-card border-white/20 mt-1"
+                    value={participantsLimit}
+                    onChange={(e) => setParticipantsLimit(e.target.value)}
+                  />
+                  <p className="text-xs text-muted-foreground mt-1">Максимальное количество пользователей для сбора</p>
+                </div>
+                
+                <div>
+                  <Label>Ключевые слова в био</Label>
+                  <Input 
+                    placeholder="бизнес, инвестиции, стартап" 
+                    className="glass-card border-white/20 mt-1"
+                    value={bioKeywords}
+                    onChange={(e) => setBioKeywords(e.target.value)}
+                  />
+                  <p className="text-xs text-muted-foreground mt-1">Через запятую, поиск без учета регистра</p>
+                </div>
               </div>
             </GlassCard>
 
@@ -437,11 +606,31 @@ export default function Audience() {
                     <div className="p-2 rounded-xl bg-accent/20">
                       <FileSpreadsheet className="w-5 h-5 text-accent" />
                     </div>
-                    <div>
+                    <div className="flex-1">
                       <p className="font-medium text-sm">{file.name}</p>
                       <p className="text-xs text-muted-foreground">
                         {file.count} пользователей • {file.date}
                       </p>
+                      {/* Additional metadata for enhanced results */}
+                      {file.version === '2.0' && (
+                        <div className="flex items-center gap-2 mt-1">
+                          {file.sessionId && (
+                            <span className="text-xs bg-primary/10 text-primary px-2 py-0.5 rounded">
+                              Сессия
+                            </span>
+                          )}
+                          {file.participantsLimit && (
+                            <span className="text-xs bg-accent/10 text-accent px-2 py-0.5 rounded">
+                              Лимит: {file.participantsLimit}
+                            </span>
+                          )}
+                          {file.channelsProcessed && file.totalChannels && (
+                            <span className="text-xs bg-muted/50 px-2 py-0.5 rounded">
+                              {file.channelsProcessed}/{file.totalChannels} каналов
+                            </span>
+                          )}
+                        </div>
+                      )}
                     </div>
                   </div>
                   <Button 

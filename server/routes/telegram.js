@@ -938,7 +938,24 @@ telegramRouter.get('/audience-results', async (req, res) => {
           const dateStr = timestamp.toLocaleDateString('ru-RU', { day: '2-digit', month: '2-digit', year: 'numeric' });
           const timeStr = timestamp.toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
           
-          const name = `Активная аудитория ${dateStr} ${timeStr}`;
+          // Generate descriptive name based on parsing type
+          let name;
+          if (resultsData.sessionId) {
+            name = `Аудитория сессии ${dateStr} ${timeStr}`;
+            if (resultsData.channelsProcessed && resultsData.totalChannels) {
+              name += ` (${resultsData.channelsProcessed}/${resultsData.totalChannels} каналов)`;
+            }
+          } else {
+            name = `Активная аудитория ${dateStr} ${timeStr}`;
+          }
+          
+          // Add filter info to name if applicable
+          if (resultsData.participantsLimit) {
+            name += ` (лимит: ${resultsData.participantsLimit})`;
+          }
+          if (resultsData.bioKeywords && resultsData.bioKeywords.length > 0) {
+            name += ` (ключевые слова: ${resultsData.bioKeywords.join(', ')})`;
+          }
           
           allResults.push({
             id: resultsData.id,
@@ -946,7 +963,13 @@ telegramRouter.get('/audience-results', async (req, res) => {
             date: dateStr,
             count: resultsData.count || 0,
             timestamp: resultsData.timestamp,
-            chatId: resultsData.chatId
+            chatId: resultsData.chatId,
+            sessionId: resultsData.sessionId || null,
+            version: resultsData.version || '1.0',
+            participantsLimit: resultsData.participantsLimit || null,
+            bioKeywords: resultsData.bioKeywords || null,
+            channelsProcessed: resultsData.channelsProcessed || null,
+            totalChannels: resultsData.totalChannels || null
           });
         }
       } catch (e) {
@@ -964,6 +987,45 @@ telegramRouter.get('/audience-results', async (req, res) => {
     res.json({ results: allResults });
   } catch (e) {
     logger.error('get audience-results failed', { error: String(e?.message || e) });
+    res.status(500).json({ error: String(e?.message || e) });
+  }
+});
+
+// Get parsing results for session-based audience parsing
+telegramRouter.get('/parsing-results/:resultsId/channels', async (req, res) => {
+  const { resultsId } = req.params;
+  const { userId } = req.query || {};
+  
+  if (!userId) {
+    return res.status(401).json({ error: 'Unauthorized' });
+  }
+  
+  try {
+    const resultsData = readJson(`parsing_results_${resultsId}.json`, null);
+    
+    if (!resultsData) {
+      return res.status(404).json({ error: 'Results not found' });
+    }
+    
+    if (resultsData.userId !== userId) {
+      return res.status(403).json({ error: 'Forbidden' });
+    }
+    
+    // Normalize the results data for backward compatibility
+    const normalizedData = normalizeParsingResults(resultsData);
+    
+    res.json({
+      id: normalizedData.id,
+      name: normalizedData.query || `Результаты поиска ${new Date(normalizedData.timestamp).toLocaleDateString('ru-RU')}`,
+      channels: normalizedData.channels,
+      count: normalizedData.channels.length,
+      timestamp: normalizedData.timestamp,
+      keywords: normalizedData.keywords,
+      enriched: normalizedData.enriched,
+      version: normalizedData.version
+    });
+  } catch (e) {
+    logger.error('get parsing-results channels failed', { error: String(e?.message || e) });
     res.status(500).json({ error: String(e?.message || e) });
   }
 });
@@ -1017,13 +1079,41 @@ telegramRouter.get('/audience-results/:resultsId/download', async (req, res) => 
     // Генерируем CSV с разделителем точка с запятой для русской локали Excel
     const users = resultsData.users || [];
     const delimiter = ';';
-    const csvHeader = `ID${delimiter}Username${delimiter}Имя${delimiter}Фамилия\n`;
+    
+    // Enhanced CSV header with new fields
+    const csvHeader = [
+      'ID',
+      'Username', 
+      'Имя',
+      'Фамилия',
+      'Полное имя',
+      'Телефон',
+      'Био',
+      'Источник канал'
+    ].join(delimiter) + '\n';
+    
     const csvRows = users.map(u => {
       const id = (u.id || '').replace(/"/g, '""');
       const username = (u.username || '').replace(/"/g, '""');
       const firstName = (u.firstName || '').replace(/"/g, '""');
       const lastName = (u.lastName || '').replace(/"/g, '""');
-      return `${id}${delimiter}${username}${delimiter}${firstName}${delimiter}${lastName}`;
+      const fullName = (u.fullName || `${firstName} ${lastName}`.trim()).replace(/"/g, '""');
+      const phone = (u.phone || '').replace(/"/g, '""');
+      const bio = (u.bio || '').replace(/"/g, '""');
+      const sourceChannel = u.sourceChannel 
+        ? `${u.sourceChannel.title}${u.sourceChannel.username ? ` (@${u.sourceChannel.username})` : ''}`
+        : ''.replace(/"/g, '""');
+      
+      return [
+        id,
+        username,
+        firstName,
+        lastName,
+        fullName,
+        phone,
+        bio,
+        sourceChannel
+      ].join(delimiter);
     }).join('\n');
     
     const csv = '\ufeff' + csvHeader + csvRows;
@@ -1081,13 +1171,41 @@ telegramRouter.get('/audience-results/download-all', async (req, res) => {
         if (resultsData && resultsData.userId === userId) {
           const users = resultsData.users || [];
           const delimiter = ';';
-          const csvHeader = `ID${delimiter}Username${delimiter}Имя${delimiter}Фамилия\n`;
+          
+          // Enhanced CSV header with new fields
+          const csvHeader = [
+            'ID',
+            'Username', 
+            'Имя',
+            'Фамилия',
+            'Полное имя',
+            'Телефон',
+            'Био',
+            'Источник канал'
+          ].join(delimiter) + '\n';
+          
           const csvRows = users.map(u => {
             const id = (u.id || '').replace(/"/g, '""');
             const username = (u.username || '').replace(/"/g, '""');
             const firstName = (u.firstName || '').replace(/"/g, '""');
             const lastName = (u.lastName || '').replace(/"/g, '""');
-            return `${id}${delimiter}${username}${delimiter}${firstName}${delimiter}${lastName}`;
+            const fullName = (u.fullName || `${firstName} ${lastName}`.trim()).replace(/"/g, '""');
+            const phone = (u.phone || '').replace(/"/g, '""');
+            const bio = (u.bio || '').replace(/"/g, '""');
+            const sourceChannel = u.sourceChannel 
+              ? `${u.sourceChannel.title}${u.sourceChannel.username ? ` (@${u.sourceChannel.username})` : ''}`
+              : ''.replace(/"/g, '""');
+            
+            return [
+              id,
+              username,
+              firstName,
+              lastName,
+              fullName,
+              phone,
+              bio,
+              sourceChannel
+            ].join(delimiter);
           }).join('\n');
           
           const csv = '\ufeff' + csvHeader + csvRows;
@@ -1123,19 +1241,38 @@ telegramRouter.get('/audience-results/download-all', async (req, res) => {
 
 // Background parsing job
 telegramRouter.post('/parse', (req, res) => {
-  const { chatId, peer, lastDays = 30, userId, criteria = {}, minActivity = 0 } = req.body || {};
-  if (!userId) return res.status(401).json({ error: 'Unauthorized' });
-  
-  // Accept either legacy chatId (string) or new peer object
-  const chat = peer || chatId;
-  if (!chat) return res.status(400).json({ error: 'chatId or peer required' });
+  const {
+    chatId,
+    peer,
+    lastDays = 30,
+    userId,
+    criteria = {},
+    minActivity = 0,
+    sessionId,
+    participantsLimit,
+    bioKeywords
+  } = req.body || {};
 
-  const task = taskManager.enqueue('parse_audience', { 
-    chat, 
-    lastDays: Number(lastDays), 
+  if (!userId) return res.status(401).json({ error: 'Unauthorized' });
+
+  // Determine if this is a session-based parsing or single channel parsing
+  const isSessionBased = sessionId && typeof sessionId === 'string';
+
+  // For single channel parsing (legacy), require chatId or peer
+  if (!isSessionBased) {
+    const chat = peer || chatId;
+    if (!chat) return res.status(400).json({ error: 'chatId or peer required' });
+  }
+
+  const task = taskManager.enqueue('parse_audience', {
+    chat: peer || chatId,
+    lastDays: Number(lastDays),
     userId,
     criteria,
-    minActivity: Number(minActivity) || 0
+    minActivity: Number(minActivity) || 0,
+    sessionId,
+    participantsLimit: participantsLimit ? Number(participantsLimit) : null,
+    bioKeywords: bioKeywords && Array.isArray(bioKeywords) ? bioKeywords.filter(k => k && typeof k === 'string') : null
   });
   res.json({ taskId: task.id });
 });
@@ -1149,42 +1286,357 @@ telegramRouter.post('/broadcast', (req, res) => {
   res.json({ taskId: task.id });
 });
 
+/**
+ * Enriches user data with full profile information from Telegram
+ * @param {Object} tg - Telegram client instance
+ * @param {Array} users - Array of user objects to enrich
+ * @param {Map} userCache - Cache for already fetched user profiles
+ * @returns {Promise<Array>} - Array of enriched user objects
+ */
+async function enrichUsersWithFullProfile(tg, users, userCache = new Map()) {
+  const enrichedUsers = [];
+  
+  for (const user of users) {
+    try {
+      const userId = user.id?.value || user.id;
+      const userIdString = typeof userId === 'bigint' ? String(userId) : String(userId);
+      
+      // Check cache first
+      if (userCache.has(userIdString)) {
+        enrichedUsers.push({ ...user, ...userCache.get(userIdString) });
+        continue;
+      }
+      
+      // Fetch full user profile
+      const fullUser = await tg.invoke(new Api.users.GetFullUser({
+        id: user
+      }));
+      
+      const enrichedUser = {
+        ...user,
+        phone: fullUser.users[0]?.phone || null,
+        bio: fullUser.fullUser?.about || null,
+        fullName: `${user.firstName || ''} ${user.lastName || ''}`.trim()
+      };
+      
+      // Cache the enriched data
+      userCache.set(userIdString, {
+        phone: enrichedUser.phone,
+        bio: enrichedUser.bio,
+        fullName: enrichedUser.fullName
+      });
+      
+      enrichedUsers.push(enrichedUser);
+      
+      // Rate limiting
+      await sleep(100);
+    } catch (e) {
+      logger.warn('Failed to enrich user profile', { 
+        userId: user.id,
+        error: String(e?.message || e) 
+      });
+      // Return original user data if enrichment fails
+      enrichedUsers.push({
+        ...user,
+        phone: null,
+        bio: null,
+        fullName: `${user.firstName || ''} ${user.lastName || ''}`.trim()
+      });
+    }
+  }
+  
+  return enrichedUsers;
+}
+
+/**
+ * Filters users by bio keywords (case-insensitive)
+ * @param {Array} users - Array of user objects with bio field
+ * @param {Array} keywords - Keywords to filter by
+ * @returns {Array} - Filtered array of users
+ */
+function filterUsersByBioKeywords(users, keywords) {
+  if (!keywords || !Array.isArray(keywords) || keywords.length === 0) {
+    return users;
+  }
+  
+  return users.filter(user => {
+    const bio = user.bio || '';
+    const bioLower = bio.toLowerCase();
+    
+    return keywords.some(keyword => {
+      const keywordLower = String(keyword).toLowerCase().trim();
+      return keywordLower && bioLower.includes(keywordLower);
+    });
+  });
+}
+
+/**
+ * Deduplicates users by ID, keeping the first occurrence with source channel info
+ * @param {Array} users - Array of user objects
+ * @returns {Array} - Deduplicated array of users
+ */
+function deduplicateUsers(users) {
+  const seen = new Set();
+  const deduplicated = [];
+  
+  for (const user of users) {
+    const userId = String(user.id?.value || user.id);
+    if (!seen.has(userId)) {
+      seen.add(userId);
+      deduplicated.push(user);
+    }
+  }
+  
+  return deduplicated;
+}
+
 // Register workers
 taskManager.attachWorker('parse_audience', async (task, manager) => {
-  const { chat, lastDays, criteria = {}, minActivity = 0, userId } = task.payload;
-  manager.setStatus(task.id, 'running', { progress: 0, message: 'Resolving chat...' });
+  const { 
+    chat, 
+    lastDays, 
+    criteria = {}, 
+    minActivity = 0, 
+    userId, 
+    sessionId, 
+    participantsLimit, 
+    bioKeywords 
+  } = task.payload;
+  
+  // Import Api here to avoid top-level import issues
+  const { Api } = await import('telegram/tl/index.js');
+  
   try {
-    const { all, active } = await getParticipantsWithActivity(chat, lastDays, 200, 800, criteria, minActivity);
-    manager.setStatus(task.id, 'running', { progress: 70, current: active.length, total: all.length, message: 'Saving users...' });
+    let allUsers = [];
+    let channelsProcessed = 0;
+    let totalChannels = 0;
+    const userCache = new Map();
     
-    // Сохраняем результаты аудитории
+    if (sessionId) {
+      // Session-based parsing - process all channels from parsing results
+      manager.setStatus(task.id, 'running', { 
+        progress: 5, 
+        message: 'Loading parsing session...' 
+      });
+      
+      const sessionData = readJson(`parsing_results_${sessionId}.json`, null);
+      if (!sessionData || sessionData.userId !== userId) {
+        throw new Error('Parsing session not found or access denied');
+      }
+      
+      const channels = sessionData.channels || [];
+      totalChannels = channels.length;
+      
+      if (totalChannels === 0) {
+        throw new Error('No channels found in parsing session');
+      }
+      
+      // Get Telegram client once for the entire session
+      const { getClient } = await import('../services/telegramClient.js');
+      const tg = await getClient();
+      
+      for (let i = 0; i < channels.length; i++) {
+        const channel = channels[i];
+        channelsProcessed = i + 1;
+        
+        // Check if we've reached the participant limit
+        if (participantsLimit && allUsers.length >= participantsLimit) {
+          logger.info('Reached participant limit, stopping', { 
+            current: allUsers.length, 
+            limit: participantsLimit 
+          });
+          break;
+        }
+        
+        const progress = Math.round(10 + (channelsProcessed / totalChannels) * 60);
+        manager.setStatus(task.id, 'running', { 
+          progress,
+          current: allUsers.length,
+          total: participantsLimit || channels.length * 100, // Estimate
+          message: `Processing channel ${channelsProcessed}/${totalChannels}: ${channel.title}` 
+        });
+        
+        try {
+          // Use peer data if available, otherwise fallback to username/id
+          const chatTarget = channel.peer || channel.username || channel.id;
+          
+          logger.info('Processing channel', { 
+            channelId: channel.id,
+            title: channel.title,
+            hasPeer: !!channel.peer,
+            target: chatTarget
+          });
+          
+          const { all: channelUsers, active: channelActive } = await getParticipantsWithActivity(
+            chatTarget, 
+            lastDays, 
+            200, 
+            800, 
+            criteria, 
+            minActivity
+          );
+          
+          // Add source channel metadata to each user
+          const usersWithSource = channelActive.map(user => ({
+            ...user,
+            sourceChannel: {
+              id: channel.id,
+              title: channel.title,
+              username: channel.username || null
+            }
+          }));
+          
+          allUsers.push(...usersWithSource);
+          
+          logger.info('Channel processed', { 
+            channelId: channel.id,
+            activeUsers: channelActive.length,
+            totalUsers: allUsers.length 
+          });
+          
+        } catch (channelError) {
+          logger.warn('Failed to process channel', { 
+            channelId: channel.id,
+            title: channel.title,
+            error: String(channelError?.message || channelError) 
+          });
+          // Continue with next channel
+          continue;
+        }
+        
+        // Small delay between channels
+        await sleep(200);
+      }
+      
+    } else {
+      // Single channel parsing (legacy)
+      manager.setStatus(task.id, 'running', { 
+        progress: 10, 
+        message: 'Processing channel...' 
+      });
+      
+      const { all: channelUsers, active: channelActive } = await getParticipantsWithActivity(
+        chat, 
+        lastDays, 
+        200, 
+        800, 
+        criteria, 
+        minActivity
+      );
+      
+      // Add source channel metadata
+      const usersWithSource = channelActive.map(user => ({
+        ...user,
+        sourceChannel: {
+          id: typeof chat === 'object' ? chat.id : chat,
+          title: 'Single Channel',
+          username: null
+        }
+      }));
+      
+      allUsers = usersWithSource;
+    }
+    
+    manager.setStatus(task.id, 'running', { 
+      progress: 70, 
+      current: allUsers.length,
+      total: participantsLimit || allUsers.length,
+      message: 'Deduplicating users...' 
+    });
+    
+    // Deduplicate users
+    const deduplicatedUsers = deduplicateUsers(allUsers);
+    
+    // Apply participant limit if specified
+    const limitedUsers = participantsLimit 
+      ? deduplicatedUsers.slice(0, participantsLimit) 
+      : deduplicatedUsers;
+    
+    manager.setStatus(task.id, 'running', { 
+      progress: 75, 
+      current: limitedUsers.length,
+      total: participantsLimit || limitedUsers.length,
+      message: 'Enriching user profiles...' 
+    });
+    
+    // Enrich with full profile data
+    const { getClient } = await import('../services/telegramClient.js');
+    const tg = await getClient();
+    const enrichedUsers = await enrichUsersWithFullProfile(tg, limitedUsers, userCache);
+    
+    manager.setStatus(task.id, 'running', { 
+      progress: 85, 
+      current: enrichedUsers.length,
+      total: participantsLimit || enrichedUsers.length,
+      message: 'Applying bio filters...' 
+    });
+    
+    // Apply bio keyword filtering if specified
+    const filteredUsers = bioKeywords && bioKeywords.length > 0
+      ? filterUsersByBioKeywords(enrichedUsers, bioKeywords)
+      : enrichedUsers;
+    
+    manager.setStatus(task.id, 'running', { 
+      progress: 90, 
+      current: filteredUsers.length,
+      total: participantsLimit || filteredUsers.length,
+      message: 'Saving results...' 
+    });
+    
+    // Save results with enhanced schema
     const resultsId = `audience_${Date.now()}_${userId}`;
-    const chatIdForStorage = typeof chat === 'object' ? chat.id : chat;
+    const chatIdForStorage = sessionId || (typeof chat === 'object' ? chat.id : chat);
+    
     const resultsData = {
       id: resultsId,
       userId: userId,
+      sessionId: sessionId || null,
       chatId: chatIdForStorage,
       lastDays: lastDays,
       criteria: criteria,
       minActivity: minActivity,
-      users: active.map((u) => {
+      participantsLimit: participantsLimit,
+      bioKeywords: bioKeywords,
+      channelsProcessed: channelsProcessed,
+      totalChannels: totalChannels,
+      users: filteredUsers.map((u) => {
         const userId = u.id?.value || u.id;
         const userIdString = typeof userId === 'bigint' ? String(userId) : String(userId);
         return { 
           id: userIdString, 
           username: u.username || null, 
           firstName: u.firstName || null, 
-          lastName: u.lastName || null 
+          lastName: u.lastName || null,
+          fullName: u.fullName || `${u.firstName || ''} ${u.lastName || ''}`.trim(),
+          phone: u.phone || null,
+          bio: u.bio || null,
+          sourceChannel: u.sourceChannel || null
         };
       }),
       timestamp: new Date().toISOString(),
-      count: active.length,
-      total: all.length
+      count: filteredUsers.length,
+      totalFound: limitedUsers.length,
+      version: '2.0' // New version for enhanced schema
     };
     
     writeJson(`audience_results_${resultsId}.json`, resultsData);
-    manager.setProgress(task.id, 100, { current: active.length, total: all.length, message: 'Done' });
-    return { chatId: chatIdForStorage, total: all.length, active: active.length, resultsId };
+    
+    manager.setProgress(task.id, 100, { 
+      current: filteredUsers.length, 
+      total: participantsLimit || filteredUsers.length, 
+      message: 'Done' 
+    });
+    
+    return { 
+      chatId: chatIdForStorage, 
+      totalFound: limitedUsers.length,
+      active: filteredUsers.length, 
+      resultsId,
+      sessionId: sessionId || null,
+      channelsProcessed: channelsProcessed,
+      totalChannels: totalChannels
+    };
+    
   } catch (e) {
     logger.error('parse_audience failed', { error: String(e?.message || e) });
     throw e;
