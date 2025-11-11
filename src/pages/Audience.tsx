@@ -11,22 +11,14 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { useApi, apiDownload } from "@/lib/api";
 import { useAuth } from "@/context/AuthContext";
 
-interface Peer {
+interface ParsingSession {
   id: string;
-  accessHash: string;
-  type: string;
-}
-
-interface Channel {
-  id: string;
-  title: string;
-  address: string;
-  username?: string;
-  membersCount: number;
-  type?: string;
-  parsingResultId?: string;
-  parsingResultName?: string;
-  peer?: Peer;
+  name: string;
+  count: number;
+  timestamp: string;
+  keywords: string[];
+  enriched?: boolean;
+  version?: string;
 }
 
 interface AudienceResult {
@@ -44,24 +36,13 @@ interface AudienceResult {
   totalChannels?: number | null;
 }
 
-interface ParsingResult {
-  id: string;
-  name: string;
-  channels: Channel[];
-  count: number;
-  timestamp: string;
-  keywords: string[];
-  enriched?: boolean;
-  version?: string;
-}
-
 export default function Audience() {
   const { toast } = useToast();
   const { user } = useAuth();
   const api = useApi();
   const [isLoading, setIsLoading] = useState(false);
-  const [selectedChannelId, setSelectedChannelId] = useState<string>("");
-  const [selectedChannel, setSelectedChannel] = useState<Channel | null>(null);
+  const [selectedSessionId, setSelectedSessionId] = useState<string>("");
+  const [selectedSession, setSelectedSession] = useState<ParsingSession | null>(null);
   const [chatLink, setChatLink] = useState("");
   const [criteria, setCriteria] = useState({
     likes: true,
@@ -71,35 +52,12 @@ export default function Audience() {
   });
   const [lastDays, setLastDays] = useState("30");
   const [minActivity, setMinActivity] = useState("5");
-  const [channels, setChannels] = useState<Channel[]>([]);
+  const [parsingSessions, setParsingSessions] = useState<ParsingSession[]>([]);
   const [audienceFiles, setAudienceFiles] = useState<AudienceResult[]>([]);
-  const [parsingResults, setParsingResults] = useState<ParsingResult[]>([]);
   const [activeCount, setActiveCount] = useState(0);
   const [engagementRate, setEngagementRate] = useState(0);
-  
-  // New state for enhanced features
-  const [selectedSessionId, setSelectedSessionId] = useState<string>("");
-  const [selectedSession, setSelectedSession] = useState<ParsingResult | null>(null);
   const [participantsLimit, setParticipantsLimit] = useState<string>("");
   const [bioKeywords, setBioKeywords] = useState<string>("");
-  const [isSessionMode, setIsSessionMode] = useState(false);
-
-  const loadChannels = async () => {
-    if (!user?.id) {
-      console.log('loadChannels: No user ID');
-      return;
-    }
-    
-    try {
-      console.log('loadChannels: Loading channels for user', user.id);
-      const response = await api.get('/telegram/parsing-results/channels') as { channels: Channel[] };
-      console.log('loadChannels: Response received', { channelsCount: response.channels?.length || 0, channels: response.channels });
-      setChannels(response.channels || []);
-    } catch (e) {
-      console.error('Failed to load channels', e);
-      setChannels([]);
-    }
-  };
 
   const loadAudienceResults = async () => {
     if (!user?.id) return;
@@ -113,32 +71,43 @@ export default function Audience() {
     }
   };
 
-  const loadParsingResults = async () => {
+  const loadParsingSessions = async () => {
     if (!user?.id) return;
     
     try {
-      const response = await api.get('/telegram/parsing-results') as { results: ParsingResult[] };
-      setParsingResults(response.results || []);
+      const response = await api.get('/telegram/parsing-results') as { results: ParsingSession[] };
+      setParsingSessions(response.results || []);
     } catch (e) {
-      console.error('Failed to load parsing results', e);
-      setParsingResults([]);
+      console.error('Failed to load parsing sessions', e);
+      setParsingSessions([]);
     }
   };
 
   useEffect(() => {
     if (user?.id) {
-      console.log('Audience: User ID changed, loading data', user.id);
-      loadChannels();
       loadAudienceResults();
-      loadParsingResults();
+      loadParsingSessions();
     } else {
-      console.log('Audience: No user ID, clearing data');
-      setChannels([]);
+      setParsingSessions([]);
       setAudienceFiles([]);
-      setParsingResults([]);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user?.id]);
+
+  useEffect(() => {
+    if (!selectedSessionId) {
+      setSelectedSession(null);
+      return;
+    }
+
+    const session = parsingSessions.find((item) => item.id === selectedSessionId);
+    if (session) {
+      setSelectedSession(session);
+    } else {
+      setSelectedSessionId("");
+      setSelectedSession(null);
+    }
+  }, [parsingSessions, selectedSessionId]);
   const mockUserPhoto = "https://api.dicebear.com/7.x/avataaars/svg?seed=telegram";
 
   const handleParsing = async () => {
@@ -151,25 +120,37 @@ export default function Audience() {
       return;
     }
 
-    // Determine parsing mode and validate inputs
-    if (isSessionMode && !selectedSessionId) {
+    // Validate required fields
+    if (!selectedSessionId && !chatLink) {
       toast({
         title: "Ошибка",
-        description: "Выберите сессию парсинга",
+        description: "Выберите сессию парсинга или введите ссылку на канал",
         variant: "destructive",
       });
       return;
     }
 
-    if (!isSessionMode && !selectedChannel && !chatLink) {
+    // Validate required participantsLimit
+    if (!participantsLimit || !participantsLimit.trim()) {
       toast({
         title: "Ошибка",
-        description: "Выберите канал или введите ссылку",
+        description: "Укажите лимит участников (обязательное поле)",
         variant: "destructive",
       });
       return;
     }
 
+    const limitNum = Number(participantsLimit);
+    if (isNaN(limitNum) || limitNum <= 0) {
+      toast({
+        title: "Ошибка",
+        description: "Лимит участников должен быть положительным числом",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    // Clear stats before starting
     setIsLoading(true);
     setActiveCount(0);
     setEngagementRate(0);
@@ -179,75 +160,45 @@ export default function Audience() {
         lastDays: Number(lastDays) || 30,
         criteria: criteria,
         minActivity: Number(minActivity) || 0,
-        userId: user.id
+        userId: user.id,
+        participantsLimit: limitNum
       };
       
-      // Add session-based parsing parameters
-      if (isSessionMode && selectedSessionId) {
-        requestBody.sessionId = selectedSessionId;
+      // Parse bio keywords - support both comma and newline separation
+      if (bioKeywords.trim()) {
+        const keywords = bioKeywords
+          .split(/[,\n]/)
+          .map(k => k.trim())
+          .filter(k => k.length > 0);
         
-        if (participantsLimit) {
-          requestBody.participantsLimit = Number(participantsLimit);
+        if (keywords.length > 0) {
+          requestBody.bioKeywords = keywords;
         }
-        
-        if (bioKeywords.trim()) {
-          requestBody.bioKeywords = bioKeywords
-            .split(',')
-            .map(k => k.trim())
-            .filter(k => k.length > 0);
-        }
-      } else {
-        // Single channel parsing (legacy)
-        let chat: Peer | string | undefined;
-        
-        if (selectedChannel) {
-          // For selected channel, use peer data if available, otherwise construct from id
-          if (selectedChannel.peer) {
-            chat = selectedChannel.peer;
-          } else {
-            // Fallback if peer data not available (legacy)
-            chat = selectedChannel.username || selectedChannel.id;
-          }
-        } else if (chatLink) {
-          // For manual links, extract identifier and send as string (legacy)
-          const match = chatLink.match(/(?:https?:\/\/)?(?:t\.me\/|@)(\w+)/);
-          if (match) {
-            chat = match[1];
-          } else {
-            toast({
-              title: "Ошибка",
-              description: "Неверный формат ссылки на канал",
-              variant: "destructive",
-            });
-            return;
-          }
-        }
+      }
 
-        if (chat) {
-          if (typeof chat === 'object' && chat.id) {
-            requestBody.peer = chat;
-          } else {
-            requestBody.chatId = chat;
-          }
-        }
-        
-        // Also support new parameters for single channel parsing
-        if (participantsLimit) {
-          requestBody.participantsLimit = Number(participantsLimit);
-        }
-        
-        if (bioKeywords.trim()) {
-          requestBody.bioKeywords = bioKeywords
-            .split(',')
-            .map(k => k.trim())
-            .filter(k => k.length > 0);
+      // Determine parsing mode
+      if (selectedSessionId) {
+        // Session-based parsing
+        requestBody.sessionId = selectedSessionId;
+      } else if (chatLink) {
+        // Manual link parsing
+        const match = chatLink.match(/(?:https?:\/\/)?(?:t\.me\/|@)(\w+)/);
+        if (match) {
+          requestBody.chatId = match[1];
+        } else {
+          toast({
+            title: "Ошибка",
+            description: "Неверный формат ссылки на канал",
+            variant: "destructive",
+          });
+          setIsLoading(false);
+          return;
         }
       }
       
       const response = await api.post('/telegram/parse', requestBody) as { taskId: string };
 
-      // Отслеживаем прогресс задачи через SSE
-      // In production, use relative '/api' to avoid port issues
+      // Track task progress via SSE
       const API_BASE_URL = import.meta.env.PROD 
         ? '/api' 
         : (import.meta.env.VITE_API_URL || '/api');
@@ -258,16 +209,25 @@ export default function Audience() {
         if (data.status === 'completed') {
           eventSource.close();
           setIsLoading(false);
-          setActiveCount(data.result?.active || 0);
-          const total = data.result?.total || 0;
-          setEngagementRate(total > 0 ? Math.round((data.result?.active || 0) / total * 100) : 0);
           
-          // Обновляем список результатов
+          const active = Number(data.result?.active) || 0;
+          const totalFound = Number(data.result?.totalFound) || 0;
+          const limitForResult = Number(
+            data.result?.limit ??
+            data.result?.total ??
+            data.result?.participantsLimit ??
+            limitNum
+          ) || limitNum;
+          
+          setActiveCount(active);
+          setEngagementRate(limitForResult > 0 ? Math.round((active / limitForResult) * 100) : 0);
+          
+          // Refresh audience results list
           loadAudienceResults();
           
           const resultMessage = data.result?.sessionId 
-            ? `Найдено ${data.result?.active || 0} пользователей из ${data.result?.totalFound || 0} по ${data.result?.channelsProcessed || 0} каналам`
-            : `Найдено ${data.result?.active || 0} активных пользователей из ${total}`;
+            ? `Найдено ${active} пользователей из ${totalFound} по ${data.result?.channelsProcessed || 0} каналам`
+            : `Найдено ${active} активных пользователей из ${limitForResult}`;
           
           toast({
             title: "Аудитория найдена",
@@ -282,14 +242,12 @@ export default function Audience() {
             variant: "destructive",
           });
         } else if (data.status === 'running') {
-          // Обновляем прогресс
-          const progress = data.progress || 0;
-          const current = data.current || 0;
-          const total = data.total || 0;
-          if (total > 0) {
-            setActiveCount(current);
-            setEngagementRate(Math.round(current / total * 100));
-          }
+          // Update progress with current/limit from SSE
+          const current = Number(data.current) || 0;
+          const limit = Number(data.limit ?? data.total ?? limitNum) || limitNum;
+          
+          setActiveCount(current);
+          setEngagementRate(limit > 0 ? Math.round((current / limit) * 100) : 0);
         }
       };
 
@@ -362,97 +320,63 @@ export default function Audience() {
           </div>
 
           <div className="space-y-4">
-            {/* Mode Selection */}
-            <div className="flex items-center justify-between p-4 rounded-lg bg-primary/5 border border-primary/20">
-              <div className="flex items-center gap-3">
-                <Users className="w-5 h-5 text-primary" />
-                <div>
-                  <h4 className="font-medium">Режим парсинга</h4>
-                  <p className="text-sm text-muted-foreground">Выберите тип анализа аудитории</p>
-                </div>
-              </div>
-              <div className="flex items-center gap-2">
-                <span className={`text-sm ${!isSessionMode ? 'font-medium' : 'text-muted-foreground'}`}>Один канал</span>
-                <Switch 
-                  checked={isSessionMode} 
-                  onCheckedChange={setIsSessionMode}
-                />
-                <span className={`text-sm ${isSessionMode ? 'font-medium' : 'text-muted-foreground'}`}>Сессия</span>
-              </div>
+            <div>
+              <Label>Сохранённые сессии</Label>
+              <Select
+                value={selectedSessionId}
+                onValueChange={(value) => {
+                  if (value === "__none") {
+                    setSelectedSessionId("");
+                    setSelectedSession(null);
+                    return;
+                  }
+                  setSelectedSessionId(value);
+                  const session = parsingSessions.find((s) => s.id === value);
+                  setSelectedSession(session || null);
+                }}
+              >
+                <SelectTrigger className="glass-card border-white/20 mt-1">
+                  <SelectValue placeholder="Выберите сессию для анализа" />
+                </SelectTrigger>
+                <SelectContent className="glass-card glass-effect">
+                  {parsingSessions.length > 0 ? (
+                    <>
+                      <SelectItem value="__none">Без сессии</SelectItem>
+                      {parsingSessions.map((session) => (
+                        <SelectItem key={session.id} value={session.id}>
+                          {session.name} • {session.count} каналов
+                        </SelectItem>
+                      ))}
+                    </>
+                  ) : (
+                    <SelectItem value="empty" disabled>
+                      {user?.id ? "Нет сохранённых сессий парсинга" : "Необходима авторизация"}
+                    </SelectItem>
+                  )}
+                </SelectContent>
+              </Select>
+              <p className="text-xs text-muted-foreground mt-1">
+                Используйте сохранённые сессии, чтобы обработать сразу несколько каналов
+              </p>
+              {selectedSession && (
+                <p className="text-xs text-primary mt-1">
+                  Выбрана сессия: {selectedSession.count} каналов • {new Date(selectedSession.timestamp).toLocaleString("ru-RU")}
+                </p>
+              )}
             </div>
 
-            {/* Session-based parsing inputs */}
-            {isSessionMode ? (
-              <div>
-                <Label>Выберите сессию парсинга {parsingResults.length > 0 && `(${parsingResults.length} сессий)`}</Label>
-                <Select 
-                  value={selectedSessionId} 
-                  onValueChange={(value) => {
-                    setSelectedSessionId(value);
-                    const session = parsingResults.find(s => s.id === value);
-                    setSelectedSession(session || null);
-                  }}
-                >
-                  <SelectTrigger className="glass-card border-white/20 mt-1">
-                    <SelectValue placeholder="Выберите сессию для анализа" />
-                  </SelectTrigger>
-                  <SelectContent className="glass-card glass-effect">
-                    {parsingResults.length > 0 ? (
-                      parsingResults.map((session) => (
-                        <SelectItem key={session.id} value={session.id}>
-                          {session.name} ({session.count} каналов)
-                        </SelectItem>
-                      ))
-                    ) : (
-                      <SelectItem value="empty" disabled>
-                        {user?.id ? 'Нет сохранённых сессий парсинга' : 'Необходима авторизация'}
-                      </SelectItem>
-                    )}
-                  </SelectContent>
-                </Select>
-              </div>
-            ) : (
-              <>
-                <div>
-                  <Label>Выберите канал {channels.length > 0 && `(${channels.length} каналов)`}</Label>
-                  <Select 
-                    value={selectedChannelId} 
-                    onValueChange={(value) => {
-                      setSelectedChannelId(value);
-                      const channel = channels.find(ch => ch.id === value);
-                      setSelectedChannel(channel || null);
-                    }}
-                  >
-                    <SelectTrigger className="glass-card border-white/20 mt-1">
-                      <SelectValue placeholder="Выберите канал" />
-                    </SelectTrigger>
-                    <SelectContent className="glass-card glass-effect">
-                      {channels.length > 0 ? (
-                        channels.map((channel) => (
-                          <SelectItem key={channel.id} value={channel.id}>
-                            {channel.title} ({channel.membersCount.toLocaleString('ru-RU')}){channel.type ? ` - ${channel.type}` : ''}
-                          </SelectItem>
-                        ))
-                      ) : (
-                        <SelectItem value="empty" disabled>
-                          {user?.id ? 'Нет сохранённых каналов' : 'Необходима авторизация'}
-                        </SelectItem>
-                      )}
-                    </SelectContent>
-                  </Select>
-                </div>
-
-                <div>
-                  <Label>Ссылка на канал / чат</Label>
-                  <Input 
-                    placeholder="https://t.me/channelname или @channelname" 
-                    className="glass-card border-white/20 mt-1"
-                    value={chatLink}
-                    onChange={(e) => setChatLink(e.target.value)}
-                  />
-                </div>
-              </>
-            )}
+            <div>
+              <Label>Ссылка на канал / чат</Label>
+              <Input
+                placeholder="https://t.me/channelname или @channelname"
+                className="glass-card border-white/20 mt-1"
+                value={chatLink}
+                onChange={(e) => setChatLink(e.target.value)}
+              />
+              <p className="text-xs text-muted-foreground mt-1">
+                Оставьте поле пустым, если используете сохранённую сессию
+              </p>
+            </div>
 
             {/* Enhanced filtering options */}
             <GlassCard className="bg-primary/5 border-primary/20">
@@ -486,7 +410,7 @@ export default function Audience() {
               </div>
             </GlassCard>
 
-            {/* New filtering options */}
+            {/* Additional filters */}
             <GlassCard className="bg-accent/5 border-accent/20">
               <h4 className="font-semibold text-sm mb-3 flex items-center gap-2">
                 <Users className="w-4 h-4 text-accent" />
@@ -494,26 +418,28 @@ export default function Audience() {
               </h4>
               <div className="space-y-4">
                 <div>
-                  <Label>Лимит участников</Label>
-                  <Input 
-                    type="number" 
-                    placeholder="Без лимита" 
+                  <Label>Количество участников</Label>
+                  <Input
+                    type="number"
+                    min={1}
+                    required
+                    placeholder="Введите число"
                     className="glass-card border-white/20 mt-1"
                     value={participantsLimit}
                     onChange={(e) => setParticipantsLimit(e.target.value)}
                   />
-                  <p className="text-xs text-muted-foreground mt-1">Максимальное количество пользователей для сбора</p>
+                  <p className="text-xs text-muted-foreground mt-1">Обязательное поле. Укажите максимальное количество пользователей для сбора</p>
                 </div>
                 
                 <div>
-                  <Label>Ключевые слова в био</Label>
-                  <Input 
-                    placeholder="бизнес, инвестиции, стартап" 
+                  <Label>Ключи в био</Label>
+                  <Input
+                    placeholder="бизнес, инвестиции, стартап"
                     className="glass-card border-white/20 mt-1"
                     value={bioKeywords}
                     onChange={(e) => setBioKeywords(e.target.value)}
                   />
-                  <p className="text-xs text-muted-foreground mt-1">Через запятую, поиск без учета регистра</p>
+                  <p className="text-xs text-muted-foreground mt-1">Через запятую или с новой строки. Поиск без учета регистра</p>
                 </div>
               </div>
             </GlassCard>
