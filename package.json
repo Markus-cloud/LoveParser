@@ -11,7 +11,6 @@
     "server": "node server/index.js",
     "dev:all": "concurrently -n FE,BE -c green,blue \"vite\" \"node server/index.js\"",
     "build": "vite build",
-    "build:server": "echo 'Server build not needed for Vercel'",
     "build:dev": "vite build --mode development",
     "lint": "eslint .",
     "preview": "vite preview",

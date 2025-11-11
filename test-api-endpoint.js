@@ -14,9 +14,9 @@ async function testAPIEndpoint() {
     // Set production environment
     process.env.NODE_ENV = 'production';
     
-    // Import the API handler
-    const apiModule = await import('./api/index.js');
-    const app = apiModule.default;
+    // Import the Express app directly from server
+    const serverModule = await import('./server/index.js');
+    const app = serverModule.default || serverModule;
     
     console.log('1️⃣ Starting test server...');
     
@@ -114,8 +114,7 @@ async function testAPIEndpoint() {
     console.log('📝 Summary:');
     console.log('   - Health check endpoint works');
     console.log('   - Auth endpoint is registered and accessible');
-    console.log('   - 404 handler returns JSON (not HTML)');
-    console.log('   - Ready for Vercel deployment\n');
+    console.log('   - 404 handler returns JSON (not HTML)\n');
     
     return true;
   } catch (error) {
