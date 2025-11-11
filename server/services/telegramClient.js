@@ -45,43 +45,18 @@ let client = null;
 let connecting = null;
 let authState = null; // Хранит состояние авторизации (phoneCodeHash)
 
-// Проверка и валидация сессии (без подключения)
-async function validateSession(session) {
-  if (!session || session.trim() === '') {
-    return { valid: false, reason: 'No session found' };
-  }
-
-  const { apiId, apiHash } = loadSettings();
-  if (!apiId || !apiHash) {
-    return { valid: false, reason: 'API credentials missing' };
-  }
-
-  const initialSession = new StringSession(session);
-  const tg = new TelegramClient(initialSession, apiId, apiHash, { connectionRetries: 1 });
-  
-  try {
-    await tg.connect();
-    const me = await tg.getMe();
-    await tg.disconnect();
-    
-    if (me.bot) {
-      return { valid: false, reason: 'Bot account detected', isBot: true };
-    }
-    
-    return { valid: true, user: me };
-  } catch (e) {
-    try {
-      await tg.disconnect();
-    } catch {
-      // Игнорируем ошибки отключения
-    }
-    return { valid: false, reason: String(e?.message || e) };
-  }
-}
-
 export async function getClient() {
-  if (client) return client;
-  if (connecting) return connecting;
+  const startTime = Date.now();
+  logger.info('[PERF] getClient() called');
+  
+  if (client) {
+    logger.info('[PERF] Returning cached client', { elapsed: Date.now() - startTime + 'ms' });
+    return client;
+  }
+  if (connecting) {
+    logger.info('[PERF] Returning pending connection promise', { elapsed: Date.now() - startTime + 'ms' });
+    return connecting;
+  }
 
   const { apiId, apiHash, session } = loadSettings();
   if (!apiId || !apiHash) {
@@ -93,27 +68,20 @@ export async function getClient() {
     throw new Error('No user session found. Please authenticate with phone number first');
   }
 
-  // Быстрая проверка сессии перед подключением
-  const validation = await validateSession(session);
-  if (!validation.valid) {
-    if (validation.isBot) {
-      logger.warn('Bot session detected, clearing it');
-      clearSession();
-    }
-    throw new Error(validation.reason === 'Bot account detected' 
-      ? 'Bot account detected. Please authenticate with phone number (user account)'
-      : 'Session expired or invalid. Please authenticate with phone number');
-  }
-
   const initialSession = new StringSession(session);
   const tg = new TelegramClient(initialSession, apiId, apiHash, { connectionRetries: 5 });
 
   connecting = (async () => {
     try {
+      const connectStart = Date.now();
+      logger.info('[PERF] Starting TelegramClient.connect()');
       await tg.connect();
+      logger.info('[PERF] TelegramClient.connect() completed', { elapsed: Date.now() - connectStart + 'ms' });
       
-      // Финальная проверка после подключения
+      // Проверка после подключения
+      const getMeStart = Date.now();
       const me = await tg.getMe();
+      logger.info('[PERF] getMe() completed', { elapsed: Date.now() - getMeStart + 'ms' });
       
       if (me.bot) {
         logger.error('Connected as bot account. User account required for contacts.Search');
@@ -139,15 +107,17 @@ export async function getClient() {
       
       client = tg;
       connecting = null;
+      
+      logger.info('[PERF] getClient() total time', { elapsed: Date.now() - startTime + 'ms' });
       return client;
     } catch (err) {
       connecting = null;
-      // Если ошибка не связана с ботом, очищаем сессию
-      if (!err.message?.includes('Bot account')) {
-        logger.warn('Connection failed, clearing session', { error: String(err?.message || err) });
+      const errorMessage = String(err?.message || err);
+      if (!errorMessage.includes('Bot account')) {
+        logger.warn('Connection failed, clearing session', { error: errorMessage });
         clearSession();
       }
-      logger.error('Telegram connect failed', { error: String(err?.message || err) });
+      logger.error('Telegram connect failed', { error: errorMessage });
       throw err;
     }
   })();
@@ -157,6 +127,9 @@ export async function getClient() {
 
 // Инициализация клиента для авторизации (без проверки сессии)
 export async function getAuthClient() {
+  const startTime = Date.now();
+  logger.info('[PERF] getAuthClient() called');
+  
   const { apiId, apiHash } = loadSettings();
   if (!apiId || !apiHash) {
     throw new Error('Telegram settings missing: TELEGRAM_API_ID and TELEGRAM_API_HASH');
@@ -164,53 +137,38 @@ export async function getAuthClient() {
 
   // ВАЖНО: Создаем клиент с ПУСТОЙ сессией для user account авторизации
   // НЕ используем botToken или старую сессию
-  // Явно указываем, что это USER account, НЕ bot
   const tg = new TelegramClient(
     new StringSession(''), // Пустая сессия - гарантия user account авторизации
     Number(apiId), 
     String(apiHash), 
     { 
       connectionRetries: 5,
-      // Явно указываем, что это НЕ бот - это USER account
       deviceModel: 'Tele-fluence User Client',
       appVersion: '1.0.0',
       langCode: 'en',
       systemVersion: '1.0.0',
-      // ВАЖНО: НЕ передаем botToken - это user account авторизация
-      // GramJS должен использовать только apiId и apiHash
     }
   );
   
+  const connectStart = Date.now();
   await tg.connect();
-  
-  // Проверяем, что клиент не авторизован как бот
-  // Для неавторизованного клиента getMe() выбросит ошибку - это нормально
-  try {
-    const me = await tg.getMe();
-    // Если клиент уже авторизован (что не должно быть для нового клиента), проверяем тип
-    if (me && me.bot) {
-      logger.error('Client initialized as bot, disconnecting');
-      await tg.disconnect();
-      throw new Error('Client was initialized as bot. Please clear session and try again.');
-    }
-    // Если клиент авторизован как user - это тоже проблема, т.к. мы создали новый клиент
-    logger.warn('Client is already authorized, this should not happen for new auth client');
-  } catch (e) {
-    // Для неавторизованного клиента getMe() выбросит ошибку - это ожидаемо
-    // Проверяем, что это не ошибка о боте
-    const errorMsg = e.message || String(e);
-    if (errorMsg.includes('bot') || errorMsg.includes('Bot')) {
-      await tg.disconnect().catch(() => {});
-      throw new Error('Client was initialized as bot. Please clear session and try again.');
-    }
-    // Другие ошибки (например, "not authorized") - это нормально для нового клиента
-  }
+  logger.info('[PERF] getAuthClient() connect completed', { elapsed: Date.now() - connectStart + 'ms' });
+  logger.info('[PERF] getAuthClient() total time', { elapsed: Date.now() - startTime + 'ms' });
   
   return tg;
 }
 
 // Отправка кода на номер телефона
 export async function sendCode(phoneNumber) {
+  const startTime = Date.now();
+  const normalizedPhone = String(phoneNumber || '').trim();
+  if (!normalizedPhone) {
+    throw new Error('phoneNumber required');
+  }
+  const maskedPhone = normalizedPhone.replace(/(\d{3})\d{4}(\d{4})/, '$1****$2');
+  logger.info('[PERF] sendCode() called', { phoneNumber: maskedPhone });
+  console.log(`[${new Date().toISOString()}] [PERF] sendCode() started for ${maskedPhone}`);
+  
   // Очищаем предыдущее состояние, если есть
   if (authState?.client) {
     try {
@@ -231,35 +189,47 @@ export async function sendCode(phoneNumber) {
     client = null;
   }
   
+  const authClientStart = Date.now();
   const tg = await getAuthClient();
+  logger.info('[PERF] getAuthClient() completed in sendCode', { elapsed: Date.now() - authClientStart + 'ms' });
+  console.log(`[${new Date().toISOString()}] [PERF] getAuthClient() completed: ${Date.now() - authClientStart}ms`);
+  
   try {
     // Используем прямой API вызов для отправки кода
-    // Это гарантирует правильную работу без botToken
     const { apiId, apiHash } = loadSettings();
+    const sendCodeStart = Date.now();
+    logger.info('[PERF] Starting auth.SendCode API call');
+    console.log(`[${new Date().toISOString()}] [PERF] Starting auth.SendCode API call`);
+    
     const result = await tg.invoke(
       new Api.auth.SendCode({
         apiId: Number(apiId),
         apiHash: String(apiHash),
-        phoneNumber: phoneNumber,
+        phoneNumber: normalizedPhone,
         settings: new Api.CodeSettings({}),
       })
     );
     
+    logger.info('[PERF] auth.SendCode API call completed', { elapsed: Date.now() - sendCodeStart + 'ms' });
+    console.log(`[${new Date().toISOString()}] [PERF] auth.SendCode completed: ${Date.now() - sendCodeStart}ms`);
+    
     authState = {
-      phoneNumber,
+      phoneNumber: normalizedPhone,
       phoneCodeHash: result.phoneCodeHash,
       client: tg
     };
     
-    const maskedPhone = phoneNumber.replace(/(\d{3})\d{4}(\d{4})/, '$1****$2');
     logger.info('Code sent to phone', { phoneNumber: maskedPhone });
+    logger.info('[PERF] sendCode() total time', { elapsed: Date.now() - startTime + 'ms' });
+    console.log(`[${new Date().toISOString()}] [PERF] sendCode() TOTAL: ${Date.now() - startTime}ms`);
     
     return { 
       phoneCodeHash: result.phoneCodeHash,
       phoneRegistered: result.phoneRegistered || false
     };
   } catch (e) {
-    logger.error('Send code failed', { error: String(e?.message || e) });
+    logger.error('Send code failed', { error: String(e?.message || e), elapsed: Date.now() - startTime + 'ms' });
+    console.log(`[${new Date().toISOString()}] [ERROR] sendCode() failed after ${Date.now() - startTime}ms: ${e?.message || e}`);
     try {
       await tg.disconnect();
     } catch (disconnectErr) {
@@ -272,37 +242,25 @@ export async function sendCode(phoneNumber) {
 
 // Ввод кода и завершение авторизации
 export async function signIn(phoneCode, password) {
+  const startTime = Date.now();
+  logger.info('[PERF] signIn() called');
+  console.log(`[${new Date().toISOString()}] [PERF] signIn() started`);
+  
   if (!authState) {
     throw new Error('No auth state. Please send code first');
   }
 
   const { phoneNumber, phoneCodeHash, client: tg } = authState;
   
-  // ВАЖНО: Проверяем, что клиент не авторизован как бот
-  // Это дополнительная защита от использования bot-сессии
-  // Для неавторизованного клиента getMe() выбросит ошибку - это нормально
-  try {
-    const me = await tg.getMe();
-    if (me && me.bot) {
-      logger.error('Auth client is bot, cannot proceed with user sign in');
-      throw new Error('Client is initialized as bot. Please clear session and try again.');
-    }
-  } catch (e) {
-    // Для неавторизованного клиента getMe() выбросит ошибку - это ожидаемо
-    // Проверяем, что это не ошибка о боте
-    const errorMsg = e.message || String(e);
-    if (errorMsg.includes('bot') || errorMsg.includes('Bot')) {
-      throw new Error('Client is initialized as bot. Please clear session and try again.');
-    }
-    // Другие ошибки (например, "not authorized") - это нормально для неавторизованного клиента
-  }
-  
   try {
     // Используем прямой API вызов для user account авторизации
-    // Это гарантирует, что botToken НЕ используется
     let authResult;
     
     try {
+      const signInStart = Date.now();
+      logger.info('[PERF] Starting auth.SignIn API call');
+      console.log(`[${new Date().toISOString()}] [PERF] Starting auth.SignIn API call`);
+      
       // Сначала пытаемся войти с кодом
       authResult = await tg.invoke(
         new Api.auth.SignIn({
@@ -311,6 +269,9 @@ export async function signIn(phoneCode, password) {
           phoneCode: phoneCode,
         })
       );
+      
+      logger.info('[PERF] auth.SignIn API call completed', { elapsed: Date.now() - signInStart + 'ms' });
+      console.log(`[${new Date().toISOString()}] [PERF] auth.SignIn completed: ${Date.now() - signInStart}ms`);
     } catch (e) {
       // Если требуется пароль 2FA
       const errorMsg = e.errorMessage || e.message || String(e);
@@ -318,6 +279,10 @@ export async function signIn(phoneCode, password) {
         if (!password) {
           throw new Error('Password required for 2FA');
         }
+        
+        logger.info('[PERF] 2FA password required, starting password check');
+        console.log(`[${new Date().toISOString()}] [PERF] 2FA password required`);
+        const passwordStart = Date.now();
         
         // Получаем информацию о пароле
         const passwordInfo = await tg.invoke(new Api.account.GetPassword());
@@ -332,6 +297,9 @@ export async function signIn(phoneCode, password) {
             password: passwordCheck,
           })
         );
+        
+        logger.info('[PERF] 2FA password check completed', { elapsed: Date.now() - passwordStart + 'ms' });
+        console.log(`[${new Date().toISOString()}] [PERF] 2FA password check completed: ${Date.now() - passwordStart}ms`);
       } else {
         throw e;
       }
@@ -371,6 +339,8 @@ export async function signIn(phoneCode, password) {
     }
     
     logger.info('User signed in successfully', { userId: userIdString, username: user.username });
+    logger.info('[PERF] signIn() total time', { elapsed: Date.now() - startTime + 'ms' });
+    console.log(`[${new Date().toISOString()}] [PERF] signIn() TOTAL: ${Date.now() - startTime}ms`);
     
     return { 
       success: true, 
@@ -383,7 +353,8 @@ export async function signIn(phoneCode, password) {
       }
     };
   } catch (e) {
-    logger.error('Sign in failed', { error: String(e?.message || e) });
+    logger.error('Sign in failed', { error: String(e?.message || e), elapsed: Date.now() - startTime + 'ms' });
+    console.log(`[${new Date().toISOString()}] [ERROR] signIn() failed after ${Date.now() - startTime}ms: ${e?.message || e}`);
     // НЕ очищаем authState при ошибке, чтобы пользователь мог попробовать снова
     // authState будет очищен только при успешной авторизации или при новой отправке кода
     throw e;
