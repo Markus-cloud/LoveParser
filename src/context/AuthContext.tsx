@@ -71,7 +71,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
                       }
                     }
                   } catch (e) {}
-                  userData.photo_url = `${base}/telegram/avatar/${encodeURIComponent(String(username))}`;
+                  userData.photo_url = `${base}/telegram/avatar/${encodeURIComponent(String(username))}?userId=${encodeURIComponent(String(status.userId || userData.id))}`;
                   localStorage.setItem(STORAGE_KEY, JSON.stringify(userData));
                 } else if (!userData.photo_url && status.photo_url) {
                   userData.photo_url = status.photo_url;
