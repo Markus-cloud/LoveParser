@@ -3,7 +3,7 @@ import { useAuth } from "@/context/AuthContext";
 // Determine API base URL based on environment
 // In production/builder.io, always use relative '/api' to avoid port issues
 // In development, use VITE_API_URL if set, otherwise default to '/api'
-const API_BASE_URL = import.meta.env.PROD
+export const API_BASE_URL = import.meta.env.PROD
   ? '/api'
   : (import.meta.env.VITE_API_URL || '/api');
 
@@ -88,10 +88,7 @@ function initBodyForPayload(payload: unknown, options: RequestInit): BodyInit | 
 }
 
 export async function apiDownload(path: string, userId?: string): Promise<void> {
-  // Use the same environment-aware URL resolution as apiFetch
-  const API_BASE_URL = import.meta.env.PROD 
-    ? '/api' 
-    : (import.meta.env.VITE_API_URL || '/api');
+  // Resolve URL using shared API_BASE_URL
   let url = path.startsWith('http') ? path : `${API_BASE_URL}${path.startsWith('/') ? '' : '/'}${path}`;
   
   if (userId) {
