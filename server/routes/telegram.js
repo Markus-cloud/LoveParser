@@ -29,7 +29,10 @@ telegramRouter.get('/avatar/:username', async (req, res) => {
     if (fs.existsSync(filePath)) {
       if (req.query.debug) {
         const stats = fs.statSync(filePath);
-        return res.json({ cached: true, filePath, size: stats.size });
+        const payload = { cached: true, filePath, size: stats.size };
+        const serialized = JSON.stringify(payload, (k, v) => typeof v === 'bigint' ? String(v) : v);
+        res.setHeader('Content-Type', 'application/json');
+        return res.send(serialized);
       }
       return res.sendFile(filePath);
     }
@@ -67,7 +70,11 @@ telegramRouter.get('/avatar/:username', async (req, res) => {
               if (fileBuffer && fileBuffer.length) {
                 debugResult.profilePhotoDownloaded = true;
                 try { fs.writeFileSync(filePath, fileBuffer); } catch (e) { logger.warn('failed to write avatar cache file', { filePath, error: String(e?.message || e) }); }
-                if (req.query.debug) return res.json({ debug: debugResult, cached: false });
+                if (req.query.debug) {
+                const serialized = JSON.stringify({ debug: debugResult, cached: false }, (k, v) => typeof v === 'bigint' ? String(v) : v);
+                res.setHeader('Content-Type', 'application/json');
+                return res.send(serialized);
+              }
                 res.setHeader('Content-Type', 'image/jpeg');
                 res.setHeader('Cache-Control', 'public, max-age=86400');
                 logger.info('serving downloaded avatar from tg client', { username, filePath });
@@ -122,7 +129,9 @@ telegramRouter.get('/avatar/:username', async (req, res) => {
       if (req.query.debug) {
         const debug = req._avatarDebug || { username, errors: [] };
         debug.cdn = { status: response.status, ok: response.ok };
-        return res.status(200).json({ debug });
+        const serialized = JSON.stringify({ debug }, (k, v) => typeof v === 'bigint' ? String(v) : v);
+        res.setHeader('Content-Type', 'application/json');
+        return res.status(200).send(serialized);
       }
       return res.status(response.status).send('Failed to fetch avatar');
     }
@@ -143,7 +152,9 @@ telegramRouter.get('/avatar/:username', async (req, res) => {
       const debug = req._avatarDebug || { username, errors: [] };
       debug.cdn = { status: response.status, ok: response.ok };
       debug.cached = false;
-      return res.status(200).json({ debug });
+      const serialized = JSON.stringify({ debug }, (k, v) => typeof v === 'bigint' ? String(v) : v);
+      res.setHeader('Content-Type', 'application/json');
+      return res.status(200).send(serialized);
     }
     res.send(buffer);
   } catch (e) {
@@ -812,7 +823,7 @@ telegramRouter.get('/parsing-results/download-all', async (req, res) => {
   }
 });
 
-// Download parsing results as CSV (должен быть ПЕРЕД общим параметризованным маршрутом)
+// Download parsing results as CSV (должен быть ПЕРЕД общи�� параметризованным маршрутом)
 telegramRouter.get('/parsing-results/:resultsId/download', async (req, res) => {
   const { resultsId } = req.params;
   const { userId } = req.query || {};
@@ -995,7 +1006,7 @@ telegramRouter.get('/parsing-results/channels', async (req, res) => {
           // Приорит��т от��аем Megagroup и Discussion Group, но показываем все
           const channelsWithMetadata = normalizedData.channels.map(ch => ({
             ...ch,
-            // Добавляем информацию о результате парсинга
+            // Добавляем и��формацию о результате парсинга
             parsingResultId: normalizedData.id,
             parsingResultName: normalizedData.query || `Результаты поиска ${new Date(normalizedData.timestamp).toLocaleDateString('ru-RU')}`,
             parsingResultKeywords: normalizedData.keywords,
@@ -1027,7 +1038,7 @@ telegramRouter.get('/parsing-results/channels', async (req, res) => {
   }
 });
 
-// Get saved parsing results by ID (должен быть ПОСЛЕ более специфичных маршрутов)
+// Get saved parsing results by ID (должен быт�� ПОСЛЕ более специфичных маршрутов)
 telegramRouter.get('/parsing-results/:resultsId', async (req, res) => {
   const { resultsId } = req.params;
   const { userId } = req.query || {};
