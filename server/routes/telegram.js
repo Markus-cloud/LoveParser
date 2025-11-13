@@ -10,6 +10,7 @@ export const telegramRouter = Router();
 telegramRouter.get('/avatar/:username', async (req, res) => {
   try {
     const { username } = req.params;
+    logger.info('avatar route called', { username });
     if (!username) return res.status(400).send('username required');
 
     const fs = await import('fs');
@@ -32,32 +33,41 @@ telegramRouter.get('/avatar/:username', async (req, res) => {
     // First, try to resolve and download the user's profile photo via Telegram client (preferred)
     try {
       const { getClient } = await import('../services/telegramClient.js');
+      logger.info('attempting to get Telegram client for avatar fetch', { username });
       const tg = await getClient();
       let entity = null;
       try {
         entity = await tg.getEntity(username);
+        logger.info('got entity from tg.getEntity', { username, entityType: entity?._ ? typeof entity : typeof entity, entity: entity ? (entity.username || entity.id || 'has-photo?' ) : null });
       } catch (e) {
-        // ignore
+        logger.warn('tg.getEntity failed', { username, error: String(e?.message || e) });
       }
 
       if (entity) {
         try {
           // Try high-level helper: getProfilePhotos
+          logger.info('calling tg.getProfilePhotos', { username });
           const photos = await tg.getProfilePhotos(entity, { limit: 1 });
+          logger.info('getProfilePhotos result', { username, photosCount: Array.isArray(photos) ? photos.length : (photos ? 'unknown' : 0) });
           if (photos && photos.length > 0) {
             try {
+              logger.info('attempting to download first photo via tg.downloadFile', { username });
               const fileBuffer = await tg.downloadFile(photos[0]);
+              logger.info('downloadFile returned', { username, size: fileBuffer ? fileBuffer.length : 0 });
               if (fileBuffer && fileBuffer.length) {
-                try { fs.writeFileSync(filePath, fileBuffer); } catch (e) {}
+                try { fs.writeFileSync(filePath, fileBuffer); } catch (e) { logger.warn('failed to write avatar cache file', { filePath, error: String(e?.message || e) }); }
                 res.setHeader('Content-Type', 'image/jpeg');
                 res.setHeader('Cache-Control', 'public, max-age=86400');
+                logger.info('serving downloaded avatar from tg client', { username, filePath });
                 return res.send(fileBuffer);
               }
             } catch (e) {
+              logger.error('tg.downloadFile failed', { username, error: String(e?.message || e) });
               // ignore and fallback
             }
           }
         } catch (e) {
+          logger.error('tg.getProfilePhotos failed', { username, error: String(e?.message || e) });
           // ignore and fallback
         }
       }
@@ -67,8 +77,11 @@ telegramRouter.get('/avatar/:username', async (req, res) => {
 
     // Fallback: Fetch from Telegram CDN (may 404 for some users)
     const remoteUrl = `https://t.me/i/userpic/320/${encodeURIComponent(username)}`;
+    logger.info('falling back to Telegram CDN', { username, remoteUrl });
     const response = await fetch(remoteUrl, { method: 'GET' });
+    logger.info('CDN fetch response', { username, status: response.status, ok: response.ok });
     if (!response.ok) {
+      logger.warn('CDN fetch failed', { username, status: response.status });
       return res.status(response.status).send('Failed to fetch avatar');
     }
 
@@ -78,11 +91,12 @@ telegramRouter.get('/avatar/:username', async (req, res) => {
     try {
       fs.writeFileSync(filePath, buffer);
     } catch (e) {
-      // If can't save, ignore caching but still stream image
+      logger.warn('failed to write avatar cache file from CDN', { filePath, error: String(e?.message || e) });
     }
 
     res.setHeader('Content-Type', response.headers.get('content-type') || 'image/jpeg');
     res.setHeader('Cache-Control', 'public, max-age=86400');
+    logger.info('serving avatar from CDN', { username, filePath });
     res.send(buffer);
   } catch (e) {
     res.status(500).send('Internal error');
@@ -453,7 +467,7 @@ telegramRouter.post('/search-channels', async (req, res) => {
       keywords: searchKeywords 
     });
     
-    // Сохраняем результаты для пользователя с обогащенной структурой
+    // Сохр��няем результаты для пользователя с обогащенной структурой
     const resultsId = `parsing_${Date.now()}_${userId}`;
 
     // Extract keywords from input (use provided keywords or split query)
