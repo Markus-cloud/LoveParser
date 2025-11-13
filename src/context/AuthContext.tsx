@@ -54,7 +54,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
                 // Подтягиваем photo_url с сервера, если он есть и отсутствует локально
                 if (!userData.photo_url && status.photo_url) {
                   userData.photo_url = status.photo_url;
-                  // Обновляем сохранённые данные в localStorage
+                  // Обновляем сох��анённые данные в localStorage
                   localStorage.setItem(STORAGE_KEY, JSON.stringify(userData));
                 }
 
@@ -85,7 +85,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   }, []);
 
   const login = async (userData: User, session?: string) => {
-    // Преобразуем ��анные пользователя в нужный формат
+    // Преобразуем данные пользователя в нужный формат
     const userPayload: User = {
       id: String(userData.id),
       username: userData.username,
@@ -93,7 +93,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       last_name: userData.lastName || userData.last_name,
       firstName: userData.firstName || userData.first_name,
       lastName: userData.lastName || userData.last_name,
-      photo_url: userData.photo_url,
+      // If photo_url points to t.me, use proxied API endpoint to avoid CORS/hotlink issues
+      photo_url: userData.photo_url && String(userData.photo_url).includes('t.me') && userData.username
+        ? `/api/telegram/avatar/${encodeURIComponent(String(userData.username))}`
+        : userData.photo_url || null,
       language_code: userData.language_code,
     };
 
