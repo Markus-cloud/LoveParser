@@ -124,8 +124,25 @@ telegramRouter.get('/avatar/:username', async (req, res) => {
           logger.info('attempting low-level Api.photos.GetUserPhotos', { username, userId: entity?.id });
           const userIdValue = entity?.id?.value || entity?.id;
           const getPhotos = await tg.invoke(new Api.photos.GetUserPhotos({ userId: userIdValue, offset: 0, maxId: 0, limit: 1 }));
-          debugResult.lowLevel = { ok: true, resultKeys: Object.keys(getPhotos || {}) };
-          logger.info('GetUserPhotos result keys', { username, keys: Object.keys(getPhotos || {}) });
+          // Safe serialization helper (limited depth) to avoid circulars and BigInt
+          function safeSerialize(obj, depth = 2) {
+            if (depth < 0) return '...';
+            if (obj === null || obj === undefined) return obj;
+            if (typeof obj === 'bigint') return String(obj);
+            if (typeof obj !== 'object') return obj;
+            if (Array.isArray(obj)) return obj.map(v => safeSerialize(v, depth - 1));
+            const result = {};
+            try {
+              for (const key of Object.keys(obj)) {
+                try { result[key] = safeSerialize(obj[key], depth - 1); } catch (e) { result[key] = String(e); }
+              }
+            } catch (e) {
+              return String(obj);
+            }
+            return result;
+          }
+          debugResult.lowLevel = { ok: true, resultKeys: Object.keys(getPhotos || {}), details: safeSerialize(getPhotos, 2) };
+          logger.info('GetUserPhotos result keys', { username, keys: Object.keys(getPhotos || {}), details: debugResult.lowLevel.details });
         } catch (e) {
           const err = String(e?.message || e);
           debugResult.errors.push({ stage: 'GetUserPhotos', error: err });
@@ -781,7 +798,7 @@ telegramRouter.get('/parsing-results/download-all', async (req, res) => {
             const statusEscaped = status.replace(/"/g, '""');
             const membersCount = ch.membersCount || 0;
             const description = (ch.description || '').replace(/"/g, '""');
-            const isVerified = ch.metadata?.isVerified ? 'Да' : 'Нет';
+            const isVerified = ch.metadata?.isVerified ? 'Д��' : 'Нет';
             const isRestricted = ch.metadata?.isRestricted ? 'Да' : 'Нет';
             const isScam = ch.metadata?.isScam ? 'Да' : 'Нет';
             const isFake = ch.metadata?.isFake ? 'Да' : 'Нет';
@@ -871,7 +888,7 @@ telegramRouter.get('/parsing-results/:resultsId/download', async (req, res) => {
     const normalizedData = normalizeParsingResults(resultsData);
     const channels = normalizedData.channels || [];
     
-    // Функция для преобра��ования типа кан��ла в читаемый статус
+    // Функция для преобра��ования типа кан����ла в читаемый статус
      const getStatusLabel = (category) => {
        switch (category) {
          // New canonical categories
@@ -897,7 +914,7 @@ telegramRouter.get('/parsing-results/:resultsId/download', async (req, res) => {
        }
      };
 
-     // Генерируем CSV с разделителем точ��а с запятой для русской локали Excel
+     // Генерируем CSV с разделителем точка с запятой для русской локали Excel
     const delimiter = ';'; // Точка с запятой для русской локали Excel
     
     // Enhanced CSV header with additional columns
@@ -983,7 +1000,7 @@ telegramRouter.get('/parsing-results/:resultsId/download', async (req, res) => {
     
     res.setHeader('Content-Type', 'text/csv; charset=utf-8');
     res.setHeader('Content-Disposition', `attachment; filename="${encodeURIComponent(filename)}"`);
-    res.send('\ufeff' + csv); // BOM для правиль��ого отображения кириллицы в Excel
+    res.send('\ufeff' + csv); // BOM для правильного отображения кириллицы в Excel
   } catch (e) {
     logger.error('download parsing-results failed', { error: String(e?.message || e) });
     res.status(500).json({ error: String(e?.message || e) });
@@ -991,7 +1008,7 @@ telegramRouter.get('/parsing-results/:resultsId/download', async (req, res) => {
 });
 
 // Get channels from parsing results (Megagroup and Discussion Group)
-// ВАЖНО: Этот маршрут должен быть ПЕРЕД параметризованным /parsing-results/:resultsId
+// ВАЖНО: Этот маршрут должен бы��ь ПЕРЕД параметризованным /parsing-results/:resultsId
 telegramRouter.get('/parsing-results/channels', async (req, res) => {
   const { userId } = req.query || {};
   
