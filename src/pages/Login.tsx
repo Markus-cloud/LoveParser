@@ -75,7 +75,7 @@ export default function Login() {
           phoneCode: code,
           password: needsPassword ? password : undefined,
         },
-      }) as { success?: boolean; user?: { id: string | number; username?: string; firstName?: string; lastName?: string }; session?: string };
+      }) as { success?: boolean; user?: { id: string | number; username?: string; firstName?: string; lastName?: string; photo_url?: string; photo_id?: string }; session?: string };
 
       if (data.success && data.user) {
         const userData = {
@@ -85,6 +85,7 @@ export default function Login() {
           lastName: data.user.lastName,
           first_name: data.user.firstName,
           last_name: data.user.lastName,
+          photo_url: data.user.photo_url,
         };
         
         await login(userData, data.session);

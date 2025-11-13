@@ -58,6 +58,16 @@ app.get('/.well-known/*', (_req, res) => {
 // Static files for any future need
 app.use('/static', express.static(path.join(__dirname, 'public')));
 
+// Serve user avatars with proper caching headers
+app.use('/api/user/avatar', express.static(path.join(__dirname, 'data', 'avatars'), {
+  maxAge: '1d', // Cache for 1 day
+  immutable: false,
+  setHeaders: (res, filePath) => {
+    res.set('Cache-Control', 'public, max-age=86400'); // 1 day in seconds
+    res.set('Access-Control-Allow-Origin', '*'); // CORS for avatars
+  }
+}));
+
 // 404 handler for API routes
 app.use('/api/*', (_req, res) => {
   res.status(404).json({ error: 'API endpoint not found' });
