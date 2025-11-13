@@ -174,7 +174,7 @@ export async function sendCode(phoneNumber) {
     try {
       await authState.client.disconnect();
     } catch (e) {
-      // И��норируем ошибки отключения
+      // Игнорируем ошибки отключения
     }
   }
   
@@ -342,14 +342,15 @@ export async function signIn(phoneCode, password) {
     logger.info('[PERF] signIn() total time', { elapsed: Date.now() - startTime + 'ms' });
     console.log(`[${new Date().toISOString()}] [PERF] signIn() TOTAL: ${Date.now() - startTime}ms`);
     
-    return { 
-      success: true, 
+    return {
+      success: true,
       session: exported,
       user: {
         id: userIdString,
         username: user.username || null,
         firstName: user.firstName || null,
-        lastName: user.lastName || null
+        lastName: user.lastName || null,
+        photo_url: user.username ? `https://t.me/i/userpic/320/${user.username}` : null
       }
     };
   } catch (e) {
@@ -363,7 +364,7 @@ export async function signIn(phoneCode, password) {
 
 // Очистка сессии (для повторной авторизации)
 export function clearSession() {
-  // Отключаем клиент, если он существует
+  // Отключа��м клиент, если он существует
   if (client) {
     client.disconnect().catch(() => {});
     client = null;
@@ -824,7 +825,7 @@ export async function getParticipantsWithActivity(chat, lastDays = 30, chunk = 2
     lastDays
   });
 
-  // Сначала анализируем сообщения за пер��од, чтобы собрать активных пользователей
+  // Сначала анализируем сообщения за период, чтобы собрать активных пользователей
   // Это позволяет оптимизировать получение участников - получаем только тех, кто был активен
   try {
     let addOffset = 0;
@@ -893,7 +894,7 @@ export async function getParticipantsWithActivity(chat, lastDays = 30, chunk = 2
         
         // Проверяем, что сообщение в пределах периода
         if (dateMs < since) {
-          // Достигли границы периода, прерываем анализ сообщений
+          // Достигли границы периода, прерываем ��нализ сообщений
           // (сообщения отсортированы от новых к старым)
           logger.info('Reached period boundary', { 
             messageDate: new Date(dateMs).toISOString(),
@@ -926,7 +927,7 @@ export async function getParticipantsWithActivity(chat, lastDays = 30, chunk = 2
               }
             }
             
-            // ��роверяем реакции (лайки)
+            // Проверяем реакции (лайки)
             if (criteria.likes !== false && m.reactions) {
               const reactions = m.reactions?.results || [];
               reactions.forEach(reaction => {
@@ -947,7 +948,7 @@ export async function getParticipantsWithActivity(chat, lastDays = 30, chunk = 2
               const forwardedUserId = m.fwdFrom.fromId?.userId?.value || m.fwdFrom.fromId?.userId;
               if (forwardedUserId) {
                 const forwardedUserIdStr = String(forwardedUserId);
-                activeUserIds.add(forwardedUserIdStr); // Добавляем а��торов репостов
+                activeUserIds.add(forwardedUserIdStr); // Добавляем авторов репостов
                 const forwardedActivity = activeUserActivity.get(forwardedUserIdStr) || { likes: 0, comments: 0, reposts: 0, messages: 0 };
                 forwardedActivity.reposts++;
                 activeUserActivity.set(forwardedUserIdStr, forwardedActivity);
@@ -1049,7 +1050,7 @@ export async function getParticipantsWithActivity(chat, lastDays = 30, chunk = 2
   });
 
 
-  // Фильтруем активных пользователей по критериям и минимальной активности
+  // Фильтруем активных пользователей по критер��ям и минимальной активности
   const activeUsers = totalUsers.filter((u) => {
     const userId = String(u.id?.value || u.id);
     const activity = activeUserActivity.get(userId) || { likes: 0, comments: 0, reposts: 0, messages: 0 };
