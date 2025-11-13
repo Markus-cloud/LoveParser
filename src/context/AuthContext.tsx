@@ -101,9 +101,27 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       firstName: userData.firstName || userData.first_name,
       lastName: userData.lastName || userData.last_name,
       // If photo_url points to t.me, use proxied API endpoint to avoid CORS/hotlink issues
-      photo_url: userData.photo_url && String(userData.photo_url).includes('t.me') && userData.username
-        ? `${API_BASE_URL}/telegram/avatar/${encodeURIComponent(String(userData.username))}`
-        : userData.photo_url || null,
+      photo_url: (() => {
+        const shouldProxy = userData.photo_url && String(userData.photo_url).includes('t.me') && userData.username;
+        if (!shouldProxy) return userData.photo_url || null;
+        // Resolve absolute backend URL in dev: if API_BASE_URL is relative, try to point to localhost:4000
+        let base = API_BASE_URL;
+        try {
+          if (typeof window !== 'undefined' && API_BASE_URL && API_BASE_URL.startsWith('/')) {
+            // If current origin port differs from backend, assume backend runs on 4000
+            const backendPort = '4000';
+            const hostPort = window.location.port || '';
+            if (hostPort && hostPort !== backendPort) {
+              base = `${window.location.protocol}//${window.location.hostname}:${backendPort}`;
+            } else {
+              base = `${window.location.protocol}//${window.location.hostname}${hostPort ? `:${hostPort}` : ''}`;
+            }
+          }
+        } catch (e) {
+          // ignore
+        }
+        return `${base}/telegram/avatar/${encodeURIComponent(String(userData.username))}`;
+      })(),
       language_code: userData.language_code,
     };
 
