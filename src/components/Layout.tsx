@@ -1,5 +1,6 @@
 import { ReactNode } from "react";
 import { Navigation } from "./Navigation";
+import { useAuth } from "@/context/AuthContext";
 
 interface LayoutProps {
   children: ReactNode;
