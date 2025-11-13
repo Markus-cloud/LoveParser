@@ -125,9 +125,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
             const backendPort = '4000';
             const hostPort = window.location.port || '';
             if (hostPort && hostPort !== backendPort) {
-              base = `${window.location.protocol}//${window.location.hostname}:${backendPort}`;
+              base = `${window.location.protocol}//${window.location.hostname}:${backendPort}${API_BASE_URL}`;
             } else {
-              base = `${window.location.protocol}//${window.location.hostname}${hostPort ? `:${hostPort}` : ''}`;
+              base = `${window.location.protocol}//${window.location.hostname}${hostPort ? `:${hostPort}` : ''}${API_BASE_URL}`;
             }
           }
         } catch (e) {
