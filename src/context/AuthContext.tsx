@@ -47,10 +47,17 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
             
             // Проверяем статус авторизации на сервере
             try {
-              const status = await apiFetch('/telegram/auth/status', { method: 'GET' }) as { authenticated: boolean; userId: string | number };
-              
+              const status = await apiFetch('/telegram/auth/status', { method: 'GET' }) as { authenticated: boolean; userId: string | number, photo_url?: string | null };
+
               // Сравниваем userId как строки
               if (status.authenticated && String(status.userId) === String(userData.id)) {
+                // Подтягиваем photo_url с сервера, если он есть и отсутствует локально
+                if (!userData.photo_url && status.photo_url) {
+                  userData.photo_url = status.photo_url;
+                  // Обновляем сохранённые данные в localStorage
+                  localStorage.setItem(STORAGE_KEY, JSON.stringify(userData));
+                }
+
                 // Сессия валидна, используем сохраненные данные
                 setUser(userData);
                 setLoading(false);
@@ -78,7 +85,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   }, []);
 
   const login = async (userData: User, session?: string) => {
-    // Преобразуем данные пользователя в нужный формат
+    // Преобразуем ��анные пользователя в нужный формат
     const userPayload: User = {
       id: String(userData.id),
       username: userData.username,
@@ -126,5 +133,3 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 export function useAuth() {
   return useContext(AuthContext);
 }
-
-
