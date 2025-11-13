@@ -5,9 +5,24 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useAuth } from "@/context/AuthContext";
+import type { RawUser } from "@/context/AuthContext";
 import { Phone, Lock, Loader2 } from "lucide-react";
 import { toast } from "sonner";
 import { apiFetch } from "@/lib/api";
+
+type SignInUserPayload = (RawUser & { id: string | number }) & {
+  photoUrl?: string | null;
+  photo_id?: string | null;
+  last_updated?: number | null;
+  last_login?: number | null;
+  created_at?: number | null;
+};
+
+type SignInResponse = {
+  success?: boolean;
+  session?: string;
+  user?: SignInUserPayload;
+};
 
 export default function Login() {
   const [phoneNumber, setPhoneNumber] = useState("");
@@ -71,23 +86,29 @@ export default function Login() {
     try {
       const data = await apiFetch('/telegram/auth/sign-in', {
         method: 'POST',
-        body: { 
+        body: {
           phoneCode: code,
           password: needsPassword ? password : undefined,
         },
-      }) as { success?: boolean; user?: { id: string | number; username?: string; firstName?: string; lastName?: string }; session?: string };
+      }) as SignInResponse;
 
-      if (data.success && data.user) {
-        const userData = {
-          id: String(data.user.id),
-          username: data.user.username,
-          firstName: data.user.firstName,
-          lastName: data.user.lastName,
-          first_name: data.user.firstName,
-          last_name: data.user.lastName,
+      if (data.success && data.user && data.user.id !== undefined && data.user.id !== null) {
+        const userPayload: RawUser = {
+          id: data.user.id,
+          username: data.user.username ?? undefined,
+          first_name: data.user.first_name ?? data.user.firstName ?? undefined,
+          last_name: data.user.last_name ?? data.user.lastName ?? undefined,
+          firstName: data.user.firstName ?? data.user.first_name ?? undefined,
+          lastName: data.user.lastName ?? data.user.last_name ?? undefined,
+          photo_url: data.user.photo_url ?? data.user.photoUrl ?? undefined,
+          language_code: data.user.language_code ?? undefined,
+          photoId: data.user.photoId ?? data.user.photo_id ?? undefined,
+          lastUpdated: data.user.lastUpdated ?? data.user.last_updated ?? undefined,
+          lastLogin: data.user.lastLogin ?? data.user.last_login ?? undefined,
+          createdAt: data.user.createdAt ?? data.user.created_at ?? undefined,
         };
-        
-        await login(userData, data.session);
+
+        await login(userPayload, data.session);
         toast.success("Авторизация успешна!");
         navigate("/");
       } else {
