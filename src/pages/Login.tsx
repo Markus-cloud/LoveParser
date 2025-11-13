@@ -5,9 +5,24 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useAuth } from "@/context/AuthContext";
+import type { RawUser } from "@/context/AuthContext";
 import { Phone, Lock, Loader2 } from "lucide-react";
 import { toast } from "sonner";
 import { apiFetch } from "@/lib/api";
+
+type SignInUserPayload = (RawUser & { id: string | number }) & {
+  photoUrl?: string | null;
+  photo_id?: string | null;
+  last_updated?: number | null;
+  last_login?: number | null;
+  created_at?: number | null;
+};
+
+type SignInResponse = {
+  success?: boolean;
+  session?: string;
+  user?: SignInUserPayload;
+};
 
 export default function Login() {
   const [phoneNumber, setPhoneNumber] = useState("");
@@ -71,7 +86,7 @@ export default function Login() {
     try {
       const data = await apiFetch('/telegram/auth/sign-in', {
         method: 'POST',
-        body: { 
+        body: {
           phoneCode: code,
           password: needsPassword ? password : undefined,
         },
@@ -87,8 +102,8 @@ export default function Login() {
           last_name: data.user.lastName,
           photo_url: data.user.photo_url,
         };
-        
-        await login(userData, data.session);
+
+        await login(userPayload, data.session);
         toast.success("Авторизация успешна!");
         navigate("/");
       } else {

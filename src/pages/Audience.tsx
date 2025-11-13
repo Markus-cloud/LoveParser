@@ -40,6 +40,7 @@ export default function Audience() {
   const { toast } = useToast();
   const { user } = useAuth();
   const api = useApi();
+  const backgroundImage = user?.photo_url && user.photo_url.trim().length > 0 ? user.photo_url : undefined;
   const [isLoading, setIsLoading] = useState(false);
   const [selectedSessionId, setSelectedSessionId] = useState<string>("");
   const [selectedSession, setSelectedSession] = useState<ParsingSession | null>(null);
@@ -108,7 +109,6 @@ export default function Audience() {
       setSelectedSession(null);
     }
   }, [parsingSessions, selectedSessionId]);
-  const mockUserPhoto = "https://api.dicebear.com/7.x/avataaars/svg?seed=telegram";
 
   const handleParsing = async () => {
     if (!user?.id) {
@@ -306,7 +306,7 @@ export default function Audience() {
       });
     }
   };
-  return <Layout backgroundImage={mockUserPhoto}>
+  return <Layout backgroundImage={backgroundImage}>
       <div className="space-y-6 max-w-2xl mx-auto animate-slide-up">
         <GlassCard>
           <div className="flex items-center gap-3 mb-6">

@@ -6,46 +6,72 @@ import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { BarChart3, Users, Send, CheckCircle, Crown } from "lucide-react";
 import { useAuth } from "@/context/AuthContext";
-import { useMemo } from "react";
+import { useEffect, useMemo, useState } from "react";
 
 export default function Dashboard() {
   const { user: authUser } = useAuth();
 
-  // Преобразуем данные пользователя из AuthContext в формат для компонента
-  const user = useMemo(() => {
+  const profile = useMemo(() => {
     if (!authUser) {
-      // Если пользователь еще не загружен, возвращаем значения по умолчанию
       return {
         id: "",
-        firstName: "Загрузка...",
+        fullName: "Загрузка...",
         username: "",
-        photoUrl: "",
+        photoUrl: undefined as string | undefined,
+        initials: "?",
         hasSubscription: false,
       };
     }
 
-    // Формируем полное имя из first_name и last_name
     const fullName = [authUser.first_name, authUser.last_name]
       .filter(Boolean)
-      .join(" ") || authUser.first_name || "Пользователь";
+      .join(" ")
+      .trim();
 
-    // Формируем username с префиксом @ если он есть
-    const username = authUser.username 
-      ? (authUser.username.startsWith("@") ? authUser.username : `@${authUser.username}`)
+    const displayName =
+      fullName ||
+      authUser.first_name ||
+      authUser.last_name ||
+      authUser.username ||
+      "Пользователь";
+
+    const username = authUser.username
+      ? authUser.username.startsWith("@")
+        ? authUser.username
+        : `@${authUser.username}`
       : "";
 
-    // Используем фото из Telegram или дефолтное
-    const photoUrl = authUser.photo_url || 
-      `https://api.dicebear.com/7.x/avataaars/svg?seed=${authUser.id}`;
+    const photoUrl =
+      authUser.photo_url && authUser.photo_url.trim().length > 0
+        ? authUser.photo_url
+        : undefined;
+
+    const initialsSource = displayName || username || authUser.id;
+    const initials =
+      initialsSource
+        .split(" ")
+        .filter(Boolean)
+        .slice(0, 2)
+        .map((part) => part.charAt(0).toUpperCase())
+        .join("") || "?";
 
     return {
       id: authUser.id,
-      firstName: fullName,
-      username: username,
-      photoUrl: photoUrl,
+      fullName: displayName,
+      username,
+      photoUrl,
+      initials,
       hasSubscription: false, // TODO: добавить проверку подписки с сервера
     };
   }, [authUser]);
+
+  const [avatarError, setAvatarError] = useState(false);
+
+  useEffect(() => {
+    setAvatarError(false);
+  }, [profile.photoUrl]);
+
+  const avatarSrc = !avatarError ? profile.photoUrl : undefined;
 
   const stats = [
     { icon: BarChart3, label: "Парсингов", value: "0", trend: "+0 за неделю" },
@@ -60,20 +86,20 @@ export default function Dashboard() {
   ];
 
   return (
-    <Layout backgroundImage={user.photoUrl}>
+    <Layout backgroundImage={profile.photoUrl}>
       <div className="space-y-6 max-w-2xl mx-auto animate-slide-up">
         {/* User Profile Card */}
         <GlassCard>
           <div className="flex items-start gap-4 mb-4">
             <Avatar className="w-16 h-16 sm:w-20 sm:h-20 border-4 border-white/30 flex-shrink-0">
-              <AvatarImage src={user.photoUrl} />
-              <AvatarFallback>{user.firstName?.[0]?.toUpperCase() || "?"}</AvatarFallback>
+              <AvatarImage src={avatarSrc} onError={() => setAvatarError(true)} />
+              <AvatarFallback>{profile.initials}</AvatarFallback>
             </Avatar>
             <div className="flex-1 min-w-0">
-              <h2 className="text-xl sm:text-2xl font-bold">{user.firstName}</h2>
-              <p className="text-muted-foreground text-sm">{user.username}</p>
-              <p className="text-xs text-muted-foreground mt-1">ID: {user.id}</p>
-              {user.hasSubscription ? (
+              <h2 className="text-xl sm:text-2xl font-bold">{profile.fullName}</h2>
+              <p className="text-muted-foreground text-sm">{profile.username}</p>
+              <p className="text-xs text-muted-foreground mt-1">ID: {profile.id}</p>
+              {profile.hasSubscription ? (
                 <Badge className="bg-accent/20 text-accent border-accent/30 text-xs whitespace-nowrap mt-2 inline-flex">
                   <CheckCircle className="w-3 h-3 mr-1" />
                   Активна
@@ -86,7 +112,7 @@ export default function Dashboard() {
             </div>
           </div>
 
-          {!user.hasSubscription && (
+          {!profile.hasSubscription && (
             <div className="pt-4 border-t border-white/20">
               <p className="text-sm text-muted-foreground mb-3">
                 Оформите подписку для доступа ко всем функциям
@@ -100,7 +126,7 @@ export default function Dashboard() {
         </GlassCard>
 
         {/* Subscription Plans */}
-        {!user.hasSubscription && (
+        {!profile.hasSubscription && (
           <div className="space-y-3">
             <h3 className="text-lg font-semibold px-2">Выберите тариф</h3>
             {pricingPlans.map((plan, idx) => (

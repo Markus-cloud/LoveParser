@@ -9,9 +9,12 @@ import { Send, Loader2, CheckCircle2, AlertCircle } from "lucide-react";
 import { useState, useEffect } from "react";
 import { useToast } from "@/hooks/use-toast";
 import { Progress } from "@/components/ui/progress";
+import { useAuth } from "@/context/AuthContext";
 
 export default function Broadcast() {
   const { toast } = useToast();
+  const { user } = useAuth();
+  const backgroundImage = user?.photo_url && user.photo_url.trim().length > 0 ? user.photo_url : undefined;
   const [isLoading, setIsLoading] = useState(false);
   const [progress, setProgress] = useState(0);
   const [message, setMessage] = useState("");
@@ -52,10 +55,8 @@ export default function Broadcast() {
     }, 300);
   };
 
-  const mockUserPhoto = "https://api.dicebear.com/7.x/avataaars/svg?seed=telegram";
-
   return (
-    <Layout backgroundImage={mockUserPhoto}>
+    <Layout backgroundImage={backgroundImage}>
       <div className="space-y-6 max-w-2xl mx-auto animate-slide-up">
         <GlassCard>
           <div className="flex items-center gap-3 mb-6">

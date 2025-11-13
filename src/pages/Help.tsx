@@ -2,8 +2,11 @@ import { Layout } from "@/components/Layout";
 import { GlassCard } from "@/components/GlassCard";
 import { Button } from "@/components/ui/button";
 import { BookOpen, Home, Search, Users, Send } from "lucide-react";
+import { useAuth } from "@/context/AuthContext";
 
 export default function Help() {
+  const { user } = useAuth();
+  const backgroundImage = user?.photo_url && user.photo_url.trim().length > 0 ? user.photo_url : undefined;
   const sections = [
     {
       icon: Home,
@@ -27,10 +30,8 @@ export default function Help() {
     },
   ];
 
-  const mockUserPhoto = "https://api.dicebear.com/7.x/avataaars/svg?seed=telegram";
-
   return (
-    <Layout backgroundImage={mockUserPhoto}>
+    <Layout backgroundImage={backgroundImage}>
       <div className="space-y-6 max-w-2xl mx-auto animate-slide-up">
         <GlassCard>
           <div className="flex items-center gap-3 mb-4">

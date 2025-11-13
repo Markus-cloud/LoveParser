@@ -1,4 +1,4 @@
-import { ReactNode } from "react";
+import { ReactNode, useEffect, useState } from "react";
 import { Navigation } from "./Navigation";
 
 interface LayoutProps {
@@ -7,18 +7,55 @@ interface LayoutProps {
 }
 
 export const Layout = ({ children, backgroundImage }: LayoutProps) => {
+  const [resolvedBackground, setResolvedBackground] = useState<string | null>(null);
+
+  useEffect(() => {
+    const candidate = backgroundImage?.trim();
+
+    if (!candidate) {
+      setResolvedBackground(null);
+      return;
+    }
+
+    let isMounted = true;
+    setResolvedBackground(null);
+
+    const img = new Image();
+    img.src = candidate;
+    img.onload = () => {
+      if (isMounted) {
+        setResolvedBackground(candidate);
+      }
+    };
+    img.onerror = () => {
+      if (isMounted) {
+        setResolvedBackground(null);
+      }
+    };
+
+    return () => {
+      isMounted = false;
+    };
+  }, [backgroundImage]);
+
+  const backgroundStyle = resolvedBackground
+    ? {
+        backgroundImage: `url(${resolvedBackground})`,
+        backgroundSize: "cover",
+        backgroundPosition: "center",
+      }
+    : {
+        background: "linear-gradient(135deg, hsl(210 60% 70%), hsl(195 70% 75%))",
+        backgroundSize: "cover",
+        backgroundPosition: "center",
+      };
+
   return (
     <div className="min-h-screen relative overflow-hidden">
       {/* Background with user profile photo or gradient */}
       <div 
         className="fixed inset-0 z-0"
-        style={{
-          backgroundImage: backgroundImage 
-            ? `url(${backgroundImage})` 
-            : 'linear-gradient(135deg, hsl(210 60% 70%), hsl(195 70% 75%))',
-          backgroundSize: 'cover',
-          backgroundPosition: 'center',
-        }}
+        style={backgroundStyle}
       >
         <div className="absolute inset-0 backdrop-blur-3xl bg-background/40" />
       </div>
