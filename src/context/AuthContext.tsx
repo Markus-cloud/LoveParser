@@ -58,7 +58,20 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
                 const username = usernameFromSaved || usernameFromStatus;
 
                 if (username && status.photo_url) {
-                  userData.photo_url = `/api/telegram/avatar/${encodeURIComponent(String(username))}`;
+                  // Resolve absolute backend URL in dev if needed
+                  let base = API_BASE_URL;
+                  try {
+                    if (typeof window !== 'undefined' && API_BASE_URL && API_BASE_URL.startsWith('/')) {
+                      const backendPort = '4000';
+                      const hostPort = window.location.port || '';
+                      if (hostPort && hostPort !== backendPort) {
+                        base = `${window.location.protocol}//${window.location.hostname}:${backendPort}`;
+                      } else {
+                        base = `${window.location.protocol}//${window.location.hostname}${hostPort ? `:${hostPort}` : ''}`;
+                      }
+                    }
+                  } catch (e) {}
+                  userData.photo_url = `${base}/telegram/avatar/${encodeURIComponent(String(username))}`;
                   localStorage.setItem(STORAGE_KEY, JSON.stringify(userData));
                 } else if (!userData.photo_url && status.photo_url) {
                   userData.photo_url = status.photo_url;
