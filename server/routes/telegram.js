@@ -27,20 +27,29 @@ telegramRouter.get('/avatar/:username', async (req, res) => {
 
     // If cached file exists, serve it
     if (fs.existsSync(filePath)) {
+      if (req.query.debug) {
+        const stats = fs.statSync(filePath);
+        return res.json({ cached: true, filePath, size: stats.size });
+      }
       return res.sendFile(filePath);
     }
 
     // First, try to resolve and download the user's profile photo via Telegram client (preferred)
+    const debugResult = { username, clientAttempted: false, entity: null, photosCount: 0, profilePhotoDownloaded: false, errors: [] };
     try {
       const { getClient } = await import('../services/telegramClient.js');
       logger.info('attempting to get Telegram client for avatar fetch', { username });
       const tg = await getClient();
+      debugResult.clientAttempted = true;
       let entity = null;
       try {
         entity = await tg.getEntity(username);
-        logger.info('got entity from tg.getEntity', { username, entityType: entity?._ ? typeof entity : typeof entity, entity: entity ? (entity.username || entity.id || 'has-photo?' ) : null });
+        debugResult.entity = { id: entity?.id?.value || entity?.id, username: entity?.username || null, hasPhoto: !!entity?.photo };
+        logger.info('got entity from tg.getEntity', { username, entity: debugResult.entity });
       } catch (e) {
-        logger.warn('tg.getEntity failed', { username, error: String(e?.message || e) });
+        const err = String(e?.message || e);
+        debugResult.errors.push({ stage: 'getEntity', error: err });
+        logger.warn('tg.getEntity failed', { username, error: err });
       }
 
       if (entity) {
@@ -48,31 +57,45 @@ telegramRouter.get('/avatar/:username', async (req, res) => {
           // Try high-level helper: getProfilePhotos
           logger.info('calling tg.getProfilePhotos', { username });
           const photos = await tg.getProfilePhotos(entity, { limit: 1 });
-          logger.info('getProfilePhotos result', { username, photosCount: Array.isArray(photos) ? photos.length : (photos ? 'unknown' : 0) });
+          debugResult.photosCount = Array.isArray(photos) ? photos.length : (photos ? 1 : 0);
+          logger.info('getProfilePhotos result', { username, photosCount: debugResult.photosCount });
           if (photos && photos.length > 0) {
             try {
               logger.info('attempting to download first photo via tg.downloadFile', { username });
               const fileBuffer = await tg.downloadFile(photos[0]);
               logger.info('downloadFile returned', { username, size: fileBuffer ? fileBuffer.length : 0 });
               if (fileBuffer && fileBuffer.length) {
+                debugResult.profilePhotoDownloaded = true;
                 try { fs.writeFileSync(filePath, fileBuffer); } catch (e) { logger.warn('failed to write avatar cache file', { filePath, error: String(e?.message || e) }); }
+                if (req.query.debug) return res.json({ debug: debugResult, cached: false });
                 res.setHeader('Content-Type', 'image/jpeg');
                 res.setHeader('Cache-Control', 'public, max-age=86400');
                 logger.info('serving downloaded avatar from tg client', { username, filePath });
                 return res.send(fileBuffer);
               }
             } catch (e) {
-              logger.error('tg.downloadFile failed', { username, error: String(e?.message || e) });
+              const err = String(e?.message || e);
+              debugResult.errors.push({ stage: 'downloadFile', error: err });
+              logger.error('tg.downloadFile failed', { username, error: err });
               // ignore and fallback
             }
           }
         } catch (e) {
-          logger.error('tg.getProfilePhotos failed', { username, error: String(e?.message || e) });
+          const err = String(e?.message || e);
+          debugResult.errors.push({ stage: 'getProfilePhotos', error: err });
+          logger.error('tg.getProfilePhotos failed', { username, error: err });
           // ignore and fallback
         }
       }
     } catch (e) {
+      debugResult.errors.push({ stage: 'getClient', error: String(e?.message || e) });
+      logger.warn('getClient/avatar flow failed', { username, error: String(e?.message || e) });
       // ignore and fallback to CDN
+    }
+
+    if (req.query.debug) {
+      // Continue to CDN but will return combined debug info later
+      req._avatarDebug = debugResult;
     }
 
     // Fallback: Fetch from Telegram CDN (may 404 for some users)
@@ -467,7 +490,7 @@ telegramRouter.post('/search-channels', async (req, res) => {
       keywords: searchKeywords 
     });
     
-    // Сохр��няем результаты для пользователя с обогащенной структурой
+    // Сохраняем результаты для пользователя с обогащенной структурой
     const resultsId = `parsing_${Date.now()}_${userId}`;
 
     // Extract keywords from input (use provided keywords or split query)
@@ -643,7 +666,7 @@ telegramRouter.get('/parsing-results/download-all', async (req, res) => {
                     case 'megagroup':
                       return 'Публичный чат';
                     case 'discussion':
-                      return 'Каналы с комментариями';
+                      return 'Каналы с комм��нтариями';
                     case 'broadcast':
                       return 'Каналы';
                     case 'basic':
@@ -728,7 +751,7 @@ telegramRouter.get('/parsing-results/download-all', async (req, res) => {
           
           const csv = '\ufeff' + csvHeader + csvRows;
           
-          // Формируем имя файла по ключевым словам, как в приложении
+          // Формируем имя файла по кл��чевым словам, как в приложении
           const timestamp = new Date(normalizedData.timestamp);
           const dateStr = timestamp.toLocaleDateString('ru-RU', { day: '2-digit', month: '2-digit', year: 'numeric' });
           const timeStr = timestamp.toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
@@ -1276,7 +1299,7 @@ telegramRouter.get('/audience-results/download-all', async (req, res) => {
             'Имя',
             'Фамилия',
             'Полное имя',
-            'Телефон',
+            'Телефо��',
             'Био',
             'Источник канал'
           ].join(delimiter) + '\n';
