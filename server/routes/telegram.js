@@ -160,7 +160,55 @@ telegramRouter.get('/avatar/:username', async (req, res) => {
       req._avatarDebug = debugResult;
     }
 
-    // Fallback: Fetch from Telegram CDN (may 404 for some users)
+    // Next fallback: Bot API getUserProfilePhotos (if bot token available) - prefer by userId
+    try {
+      const botToken = process.env.TELEGRAM_BOT_TOKEN || null;
+      if (botToken && req.query.debug) logger.info('attempting Bot API fallback', { username });
+
+      if (botToken && req.query && req.query.userId) {
+        try {
+          const userId = req.query.userId;
+          const getPhotosUrl = `https://api.telegram.org/bot${encodeURIComponent(botToken)}/getUserProfilePhotos?user_id=${encodeURIComponent(userId)}&limit=1`;
+          const gp = await fetch(getPhotosUrl);
+          const gpJson = await gp.json();
+          if (gpJson && gpJson.ok && gpJson.result && gpJson.result.total_count > 0) {
+            const sizes = gpJson.result.photos[0];
+            // pick largest size available (last)
+            const fileId = sizes && sizes.length ? sizes[sizes.length - 1].file_id : null;
+            if (fileId) {
+              const getFileUrl = `https://api.telegram.org/bot${encodeURIComponent(botToken)}/getFile?file_id=${encodeURIComponent(fileId)}`;
+              const gf = await fetch(getFileUrl);
+              const gfJson = await gf.json();
+              if (gfJson && gfJson.ok && gfJson.result && gfJson.result.file_path) {
+                const filePath = gfJson.result.file_path;
+                const downloadUrl = `https://api.telegram.org/file/bot${encodeURIComponent(botToken)}/${encodeURIComponent(filePath)}`;
+                const botResp = await fetch(downloadUrl);
+                if (botResp && botResp.ok) {
+                  const buf = Buffer.from(await botResp.arrayBuffer());
+                  try { fs.writeFileSync(filePath, buf); } catch (e) {}
+                  if (req.query.debug) {
+                    const debug = req._avatarDebug || { username, errors: [] };
+                    debug.bot = { ok: true, filePath };
+                    const serialized = JSON.stringify({ debug }, (k, v) => typeof v === 'bigint' ? String(v) : v);
+                    res.setHeader('Content-Type', 'application/json');
+                    return res.status(200).send(serialized);
+                  }
+                  res.setHeader('Content-Type', botResp.headers.get('content-type') || 'image/jpeg');
+                  res.setHeader('Cache-Control', 'public, max-age=86400');
+                  return res.send(buf);
+                }
+              }
+            }
+          }
+        } catch (e) {
+          logger.warn('Bot API fallback failed', { username, error: String(e?.message || e) });
+        }
+      }
+    } catch (e) {
+      // ignore
+    }
+
+    // Final fallback: Fetch from Telegram CDN (may 404 for some users)
     const remoteUrl = `https://t.me/i/userpic/320/${encodeURIComponent(username)}`;
     logger.info('falling back to Telegram CDN', { username, remoteUrl });
     const response = await fetch(remoteUrl, { method: 'GET' });
@@ -798,7 +846,7 @@ telegramRouter.get('/parsing-results/download-all', async (req, res) => {
             const statusEscaped = status.replace(/"/g, '""');
             const membersCount = ch.membersCount || 0;
             const description = (ch.description || '').replace(/"/g, '""');
-            const isVerified = ch.metadata?.isVerified ? 'Д��' : 'Нет';
+            const isVerified = ch.metadata?.isVerified ? 'Да' : 'Нет';
             const isRestricted = ch.metadata?.isRestricted ? 'Да' : 'Нет';
             const isScam = ch.metadata?.isScam ? 'Да' : 'Нет';
             const isFake = ch.metadata?.isFake ? 'Да' : 'Нет';
@@ -888,7 +936,7 @@ telegramRouter.get('/parsing-results/:resultsId/download', async (req, res) => {
     const normalizedData = normalizeParsingResults(resultsData);
     const channels = normalizedData.channels || [];
     
-    // Функция для преобра��ования типа кан����ла в читаемый статус
+    // Функция для преобра��ования типа кан��ла в читаемый статус
      const getStatusLabel = (category) => {
        switch (category) {
          // New canonical categories
@@ -939,7 +987,7 @@ telegramRouter.get('/parsing-results/:resultsId/download', async (req, res) => {
     const csvRows = channels.map(ch => {
       // Basic fields
       const title = (ch.title || '').replace(/"/g, '""');
-      // Формируем ссылку на канал: используем новый link field или fallback к username
+      // Формируем ссылку на к��нал: используем новый link field или fallback к username
       const link = ch.link || (ch.username ? `https://t.me/${ch.username}` : (ch.address || ''));
       const linkEscaped = link.replace(/"/g, '""');
       const status = getStatusLabel(ch.category || ch.type);
@@ -1008,7 +1056,7 @@ telegramRouter.get('/parsing-results/:resultsId/download', async (req, res) => {
 });
 
 // Get channels from parsing results (Megagroup and Discussion Group)
-// ВАЖНО: Этот маршрут должен бы��ь ПЕРЕД параметризованным /parsing-results/:resultsId
+// ВАЖНО: Этот маршрут должен быть ПЕРЕД параметризованным /parsing-results/:resultsId
 telegramRouter.get('/parsing-results/channels', async (req, res) => {
   const { userId } = req.query || {};
   
@@ -1278,7 +1326,7 @@ telegramRouter.get('/audience-results/:resultsId/download', async (req, res) => 
       return res.status(403).json({ error: 'Forbidden' });
     }
     
-    // Генерируем CSV с разделителем точка с запятой для русской локали Excel
+    // Генерир��ем CSV с разделителем точка с запятой для русской локали Excel
     const users = resultsData.users || [];
     const delimiter = ';';
     

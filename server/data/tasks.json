@@ -508,5 +508,41 @@
     "message": "Done",
     "current": 0,
     "total": 100
+  },
+  "9c0c894b-6a9f-4f63-946c-947ba03dafa6": {
+    "id": "9c0c894b-6a9f-4f63-946c-947ba03dafa6",
+    "type": "parse_audience",
+    "payload": {
+      "lastDays": 30,
+      "userId": "408683910",
+      "criteria": {
+        "likes": true,
+        "comments": true,
+        "reposts": true,
+        "frequency": true
+      },
+      "minActivity": 1,
+      "sessionId": "parsing_1763056300729_408683910",
+      "participantsLimit": 100,
+      "bioKeywords": null
+    },
+    "userId": "408683910",
+    "status": "completed",
+    "progress": 100,
+    "result": {
+      "chatId": "parsing_1763056300729_408683910",
+      "totalFound": 0,
+      "active": 0,
+      "resultsId": "audience_1763070688875_408683910",
+      "sessionId": "parsing_1763056300729_408683910",
+      "channelsProcessed": 19,
+      "totalChannels": 19
+    },
+    "error": null,
+    "createdAt": 1763070688407,
+    "updatedAt": 1763070688876,
+    "message": "Done",
+    "current": 0,
+    "total": 100
   }
 }
