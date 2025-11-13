@@ -331,6 +331,21 @@ export async function signIn(phoneCode, password) {
     }
     
     logger.info('User signed in successfully', { userId: userIdString, username: user.username });
+    
+    // Fetch and cache user profile photo
+    let photoUrl = null;
+    let photoId = null;
+    try {
+      const photoResult = await fetchUserProfilePhoto(tg, userId);
+      photoUrl = photoResult.photoUrl;
+      photoId = photoResult.photoId;
+    } catch (photoErr) {
+      logger.warn('Failed to fetch profile photo during sign in', { 
+        error: String(photoErr?.message || photoErr) 
+      });
+      // Continue without photo - non-blocking error
+    }
+    
     logger.info('[PERF] signIn() total time', { elapsed: Date.now() - startTime + 'ms' });
     
     return { 
@@ -340,7 +355,9 @@ export async function signIn(phoneCode, password) {
         id: userIdString,
         username: user.username || null,
         firstName: user.firstName || null,
-        lastName: user.lastName || null
+        lastName: user.lastName || null,
+        photo_url: photoUrl,
+        photo_id: photoId
       }
     };
   } catch (e) {
@@ -379,19 +396,131 @@ export async function getAuthStatus() {
     const userId = me.id?.value || me.id;
     const userIdString = typeof userId === 'bigint' ? String(userId) : String(userId);
     
+    // Try to get cached photo URL
+    let photoUrl = null;
+    try {
+      const avatarPath = path.join(__dirname, '..', 'data', 'avatars', `${userIdString}.jpg`);
+      if (fs.existsSync(avatarPath)) {
+        photoUrl = `/api/user/avatar/${userIdString}.jpg`;
+      }
+    } catch (photoErr) {
+      logger.warn('Failed to check cached avatar', { error: String(photoErr?.message || photoErr) });
+    }
+    
     return {
       authenticated: true,
       isBot: me.bot || false,
       userId: userIdString,
       username: me.username || null,
       firstName: me.firstName || null,
-      lastName: me.lastName || null
+      lastName: me.lastName || null,
+      photoUrl: photoUrl
     };
   } catch (e) {
     return {
       authenticated: false,
       error: String(e?.message || e)
     };
+  }
+}
+
+// Fetch and cache user profile photo
+export async function fetchUserProfilePhoto(tg, userId) {
+  const startTime = Date.now();
+  const userIdString = typeof userId === 'bigint' ? String(userId) : String(userId);
+  logger.info('[PERF] fetchUserProfilePhoto() called', { userId: userIdString });
+  
+  try {
+    // Get full user information including photo
+    const fullUser = await tg.invoke(
+      new Api.users.GetFullUser({
+        id: new Api.InputUserSelf()
+      })
+    );
+    
+    const user = fullUser.users?.[0];
+    if (!user || !user.photo || user.photo.className === 'UserProfilePhotoEmpty') {
+      logger.info('User has no profile photo', { userId: userIdString });
+      return { photoPath: null, photoUrl: null, photoId: null };
+    }
+    
+    const photo = user.photo;
+    const photoId = photo.photoId ? String(photo.photoId) : null;
+    
+    // Check if we already have this photo cached
+    const avatarsDir = path.join(__dirname, '..', 'data', 'avatars');
+    if (!fs.existsSync(avatarsDir)) {
+      fs.mkdirSync(avatarsDir, { recursive: true });
+    }
+    
+    const photoPath = path.join(avatarsDir, `${userIdString}.jpg`);
+    const photoMetaPath = path.join(avatarsDir, `${userIdString}.meta.json`);
+    
+    // Check if cached photo matches current photo ID
+    let needsDownload = true;
+    if (fs.existsSync(photoPath) && fs.existsSync(photoMetaPath)) {
+      try {
+        const meta = readJson(`avatars/${userIdString}.meta.json`, {});
+        if (meta.photoId === photoId) {
+          logger.info('Using cached avatar', { userId: userIdString, photoId });
+          needsDownload = false;
+        }
+      } catch (metaErr) {
+        logger.warn('Failed to read photo metadata, will re-download', { error: String(metaErr?.message || metaErr) });
+      }
+    }
+    
+    if (needsDownload) {
+      logger.info('Downloading user profile photo', { userId: userIdString, photoId });
+      
+      try {
+        // Download the profile photo
+        const buffer = await tg.downloadProfilePhoto(user, {
+          isBig: false // Get medium size photo (more reasonable for avatars)
+        });
+        
+        if (!buffer || buffer.length === 0) {
+          logger.warn('Downloaded photo buffer is empty', { userId: userIdString });
+          return { photoPath: null, photoUrl: null, photoId: null };
+        }
+        
+        // Save the photo to disk
+        fs.writeFileSync(photoPath, buffer);
+        
+        // Save metadata for caching
+        writeJson(`avatars/${userIdString}.meta.json`, {
+          photoId: photoId,
+          userId: userIdString,
+          downloadedAt: new Date().toISOString(),
+          fileSize: buffer.length
+        });
+        
+        logger.info('Profile photo downloaded and cached', { 
+          userId: userIdString, 
+          photoId, 
+          size: buffer.length,
+          elapsed: Date.now() - startTime + 'ms' 
+        });
+      } catch (downloadErr) {
+        logger.error('Failed to download profile photo', { 
+          userId: userIdString, 
+          error: String(downloadErr?.message || downloadErr) 
+        });
+        return { photoPath: null, photoUrl: null, photoId: null };
+      }
+    }
+    
+    const photoUrl = `/api/user/avatar/${userIdString}.jpg`;
+    logger.info('[PERF] fetchUserProfilePhoto() total time', { elapsed: Date.now() - startTime + 'ms' });
+    
+    return { photoPath, photoUrl, photoId };
+  } catch (e) {
+    logger.error('Failed to fetch user profile photo', { 
+      userId: userIdString, 
+      error: String(e?.message || e),
+      elapsed: Date.now() - startTime + 'ms'
+    });
+    return { photoPath: null, photoUrl: null, photoId: null };
   }
 }
 

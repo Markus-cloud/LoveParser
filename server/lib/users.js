@@ -23,13 +23,15 @@ export function upsertUser(tgUser) {
     first_name: tgUser.first_name || '',
     last_name: tgUser.last_name || '',
     photo_url: tgUser.photo_url || '',
+    photo_id: tgUser.photo_id || null,
     language_code: tgUser.language_code || '',
     lastLogin: now,
     createdAt: existing?.createdAt || now,
+    photoUpdatedAt: tgUser.photo_url ? now : (existing?.photoUpdatedAt || null),
   };
   users[id] = profile;
   saveUsersMap(users);
-  logger.info('User upserted', { id });
+  logger.info('User upserted', { id, hasPhoto: !!tgUser.photo_url });
   return profile;
 }
 

@@ -47,10 +47,16 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
             
             // Проверяем статус авторизации на сервере
             try {
-              const status = await apiFetch('/telegram/auth/status', { method: 'GET' }) as { authenticated: boolean; userId: string | number };
+              const status = await apiFetch('/telegram/auth/status', { method: 'GET' }) as { authenticated: boolean; userId: string | number; photoUrl?: string };
               
               // Сравниваем userId как строки
               if (status.authenticated && String(status.userId) === String(userData.id)) {
+                // Обновляем photo_url из ответа сервера, если он есть
+                if (status.photoUrl && status.photoUrl !== userData.photo_url) {
+                  userData.photo_url = status.photoUrl;
+                  localStorage.setItem(STORAGE_KEY, JSON.stringify(userData));
+                }
+                
                 // Сессия валидна, используем сохраненные данные
                 setUser(userData);
                 setLoading(false);
