@@ -102,7 +102,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       lastName: userData.lastName || userData.last_name,
       // If photo_url points to t.me, use proxied API endpoint to avoid CORS/hotlink issues
       photo_url: userData.photo_url && String(userData.photo_url).includes('t.me') && userData.username
-        ? `/api/telegram/avatar/${encodeURIComponent(String(userData.username))}`
+        ? `${API_BASE_URL}/telegram/avatar/${encodeURIComponent(String(userData.username))}`
         : userData.photo_url || null,
       language_code: userData.language_code,
     };
