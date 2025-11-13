@@ -436,5 +436,41 @@
     "message": "Processing channel 4/19: Бизнес молодость Москва",
     "current": 98,
     "total": 100
+  },
+  "d8841d13-c4fb-438f-b418-462175bfacce": {
+    "id": "d8841d13-c4fb-438f-b418-462175bfacce",
+    "type": "parse_audience",
+    "payload": {
+      "lastDays": 30,
+      "userId": "408683910",
+      "criteria": {
+        "likes": true,
+        "comments": true,
+        "reposts": true,
+        "frequency": true
+      },
+      "minActivity": 5,
+      "sessionId": "parsing_1763056300729_408683910",
+      "participantsLimit": 100,
+      "bioKeywords": null
+    },
+    "userId": "408683910",
+    "status": "completed",
+    "progress": 100,
+    "result": {
+      "chatId": "parsing_1763056300729_408683910",
+      "totalFound": 0,
+      "active": 0,
+      "resultsId": "audience_1763057076101_408683910",
+      "sessionId": "parsing_1763056300729_408683910",
+      "channelsProcessed": 19,
+      "totalChannels": 19
+    },
+    "error": null,
+    "createdAt": 1763057075613,
+    "updatedAt": 1763057076101,
+    "message": "Done",
+    "current": 0,
+    "total": 100
   }
 }
