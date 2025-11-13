@@ -105,6 +105,11 @@ telegramRouter.get('/avatar/:username', async (req, res) => {
     logger.info('CDN fetch response', { username, status: response.status, ok: response.ok });
     if (!response.ok) {
       logger.warn('CDN fetch failed', { username, status: response.status });
+      if (req.query.debug) {
+        const debug = req._avatarDebug || { username, errors: [] };
+        debug.cdn = { status: response.status, ok: response.ok };
+        return res.status(200).json({ debug });
+      }
       return res.status(response.status).send('Failed to fetch avatar');
     }
 
@@ -120,6 +125,12 @@ telegramRouter.get('/avatar/:username', async (req, res) => {
     res.setHeader('Content-Type', response.headers.get('content-type') || 'image/jpeg');
     res.setHeader('Cache-Control', 'public, max-age=86400');
     logger.info('serving avatar from CDN', { username, filePath });
+    if (req.query.debug) {
+      const debug = req._avatarDebug || { username, errors: [] };
+      debug.cdn = { status: response.status, ok: response.ok };
+      debug.cached = false;
+      return res.status(200).json({ debug });
+    }
     res.send(buffer);
   } catch (e) {
     res.status(500).send('Internal error');
@@ -666,7 +677,7 @@ telegramRouter.get('/parsing-results/download-all', async (req, res) => {
                     case 'megagroup':
                       return 'Публичный чат';
                     case 'discussion':
-                      return 'Каналы с комм��нтариями';
+                      return 'Каналы с комментариями';
                     case 'broadcast':
                       return 'Каналы';
                     case 'basic':
@@ -709,7 +720,7 @@ telegramRouter.get('/parsing-results/download-all', async (req, res) => {
           const csvRows = channels.map(ch => {
             // Basic fields
             const title = (ch.title || '').replace(/"/g, '""');
-            // Формируем ссылку на канал: используем новый link field или fallback к username
+            // Формируем ссылку на канал: ис��ользуем новый link field или fallback к username
             const link = ch.link || (ch.username ? `https://t.me/${ch.username}` : (ch.address || ''));
             const linkEscaped = link.replace(/"/g, '""');
             const status = getStatusLabel(ch.category || ch.type);
@@ -751,7 +762,7 @@ telegramRouter.get('/parsing-results/download-all', async (req, res) => {
           
           const csv = '\ufeff' + csvHeader + csvRows;
           
-          // Формируем имя файла по кл��чевым словам, как в приложении
+          // Формируем имя файла по ключевым словам, как в приложении
           const timestamp = new Date(normalizedData.timestamp);
           const dateStr = timestamp.toLocaleDateString('ru-RU', { day: '2-digit', month: '2-digit', year: 'numeric' });
           const timeStr = timestamp.toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
@@ -1284,7 +1295,7 @@ telegramRouter.get('/audience-results/download-all', async (req, res) => {
     
     archive.pipe(res);
     
-    // Добавляем каждый файл результатов в архив как CSV
+    // Добавляем каж��ый файл результатов в архив как CSV
     for (const file of resultsFiles) {
       try {
         const resultsData = readJson(file, null);
@@ -1299,7 +1310,7 @@ telegramRouter.get('/audience-results/download-all', async (req, res) => {
             'Имя',
             'Фамилия',
             'Полное имя',
-            'Телефо��',
+            'Телефон',
             'Био',
             'Источник канал'
           ].join(delimiter) + '\n';
