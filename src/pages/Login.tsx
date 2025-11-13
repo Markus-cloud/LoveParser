@@ -36,7 +36,7 @@ export default function Login() {
     e.preventDefault();
     
     if (!phoneNumber || phoneNumber.replace(/\D/g, "").length < 10) {
-      toast.error("Введите корректный номер телефона");
+      toast.error("Введите корректный ном��р телефона");
       return;
     }
 
@@ -85,8 +85,9 @@ export default function Login() {
           lastName: data.user.lastName,
           first_name: data.user.firstName,
           last_name: data.user.lastName,
+          photo_url: data.user.photo_url || null,
         };
-        
+
         // Сохраняем пользователя через AuthContext
         await login(userData, data.session);
         toast.success("Авторизация успешна!");
@@ -257,4 +258,3 @@ export default function Login() {
     </div>
   );
 }
-
