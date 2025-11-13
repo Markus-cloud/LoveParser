@@ -147,6 +147,11 @@ telegramRouter.get('/avatar/:username', async (req, res) => {
     }
     res.send(buffer);
   } catch (e) {
+    const err = String(e?.stack || e?.message || e);
+    logger.error('avatar route failed', { error: err });
+    if (req.query && req.query.debug) {
+      return res.status(200).json({ error: err });
+    }
     res.status(500).send('Internal error');
   }
 });
