@@ -52,9 +52,16 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
               // Сравниваем userId как строки
               if (status.authenticated && String(status.userId) === String(userData.id)) {
                 // Подтягиваем photo_url с сервера, если он есть и отсутствует локально
-                if (!userData.photo_url && status.photo_url) {
+                // Normalize photo_url: prefer proxied server avatar for t.me links
+                const usernameFromSaved = userData.username || null;
+                const usernameFromStatus = (status as any).username || null;
+                const username = usernameFromSaved || usernameFromStatus;
+
+                if (username && status.photo_url) {
+                  userData.photo_url = `/api/telegram/avatar/${encodeURIComponent(String(username))}`;
+                  localStorage.setItem(STORAGE_KEY, JSON.stringify(userData));
+                } else if (!userData.photo_url && status.photo_url) {
                   userData.photo_url = status.photo_url;
-                  // Обновляем сох��анённые данные в localStorage
                   localStorage.setItem(STORAGE_KEY, JSON.stringify(userData));
                 }
 
