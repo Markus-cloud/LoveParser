@@ -86,6 +86,20 @@ telegramRouter.get('/avatar/:username', async (req, res) => {
           logger.error('tg.getProfilePhotos failed', { username, error: err });
           // ignore and fallback
         }
+
+        // Low-level attempt using Api.photos.GetUserPhotos
+        try {
+          const { Api } = await import('telegram/tl/index.js');
+          logger.info('attempting low-level Api.photos.GetUserPhotos', { username, userId: entity?.id });
+          const userIdValue = entity?.id?.value || entity?.id;
+          const getPhotos = await tg.invoke(new Api.photos.GetUserPhotos({ userId: userIdValue, offset: 0, maxId: 0, limit: 1 }));
+          debugResult.lowLevel = { ok: true, resultKeys: Object.keys(getPhotos || {}) };
+          logger.info('GetUserPhotos result keys', { username, keys: Object.keys(getPhotos || {}) });
+        } catch (e) {
+          const err = String(e?.message || e);
+          debugResult.errors.push({ stage: 'GetUserPhotos', error: err });
+          logger.error('GetUserPhotos failed', { username, error: err });
+        }
       }
     } catch (e) {
       debugResult.errors.push({ stage: 'getClient', error: String(e?.message || e) });
@@ -720,7 +734,7 @@ telegramRouter.get('/parsing-results/download-all', async (req, res) => {
           const csvRows = channels.map(ch => {
             // Basic fields
             const title = (ch.title || '').replace(/"/g, '""');
-            // Формируем ссылку на канал: ис��ользуем новый link field или fallback к username
+            // Формируем ссылку на канал: используем новый link field или fallback к username
             const link = ch.link || (ch.username ? `https://t.me/${ch.username}` : (ch.address || ''));
             const linkEscaped = link.replace(/"/g, '""');
             const status = getStatusLabel(ch.category || ch.type);
@@ -762,7 +776,7 @@ telegramRouter.get('/parsing-results/download-all', async (req, res) => {
           
           const csv = '\ufeff' + csvHeader + csvRows;
           
-          // Формируем имя файла по ключевым словам, как в приложении
+          // Формируем имя файла по ключевым словам, как в приложен��и
           const timestamp = new Date(normalizedData.timestamp);
           const dateStr = timestamp.toLocaleDateString('ru-RU', { day: '2-digit', month: '2-digit', year: 'numeric' });
           const timeStr = timestamp.toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
@@ -861,7 +875,7 @@ telegramRouter.get('/parsing-results/:resultsId/download', async (req, res) => {
       'Скам',
       'Поддельный',
       'Есть ссылка-приглашение',
-      'Онлайн участники',
+      'Онла��н участники',
       'Админы'
     ].join(delimiter) + '\n';
     
@@ -1295,7 +1309,7 @@ telegramRouter.get('/audience-results/download-all', async (req, res) => {
     
     archive.pipe(res);
     
-    // Добавляем каж��ый файл результатов в архив как CSV
+    // Добавляем каждый файл результатов в архив как CSV
     for (const file of resultsFiles) {
       try {
         const resultsData = readJson(file, null);
