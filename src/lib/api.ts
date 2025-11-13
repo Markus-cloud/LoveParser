@@ -1,7 +1,5 @@
 import { useAuth } from "@/context/AuthContext";
 
-import { useAuth } from "@/context/AuthContext";
-
 // Determine API base URL based on environment
 // In production/builder.io, always use relative '/api' to avoid port issues
 // In development, use VITE_API_URL if set, otherwise default to '/api'
