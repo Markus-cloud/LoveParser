@@ -81,15 +81,15 @@ export async function getClient() {
       // Проверка после подключения
       const getMeStart = Date.now();
       const me = await tg.getMe();
-      logger.info('[PERF] getMe() completed', { elapsed: Date.now() - getMeStart + 'ms' });
-      
+      logger.info('[PERF] getMe() completed', { elapsed: Date.now() - getMeStart + 'ms', me: { id: me.id?.value || me.id, username: me.username, firstName: me.firstName, hasPhoto: !!me.photo } });
+
       if (me.bot) {
         logger.error('Connected as bot account. User account required for contacts.Search');
         await tg.disconnect();
         clearSession();
         throw new Error('Bot account detected. Please authenticate with phone number (user account)');
       }
-      
+
       // Сессия валидна - обновляем её на случай изменений
       const exported = tg.session.save();
       if (exported !== session) {
@@ -1028,7 +1028,7 @@ export async function getParticipantsWithActivity(chat, lastDays = 30, chunk = 2
         totalUsers.push(...activeUsersInBatch);
         foundActiveUsers += activeUsersInBatch.length;
       } else {
-        // Fallback: если не было активных пользователей, получаем всех
+        // Fallback: если не было активных пользователей, п��лучаем всех
         totalUsers.push(...users);
       }
       
