@@ -57,9 +57,37 @@ telegramRouter.get('/avatar/:username', async (req, res) => {
 
       if (entity) {
         try {
+          // Direct attempt: download entity.photo (if present)
+          if (entity.photo) {
+            try {
+              logger.info('attempting tg.downloadFile(entity.photo)', { username });
+              const buf = await tg.downloadFile(entity.photo);
+              logger.info('downloadFile(entity.photo) returned size', { username, size: buf ? buf.length : 0 });
+              if (buf && buf.length) {
+                debugResult.profilePhotoDownloaded = true;
+                try { fs.writeFileSync(filePath, buf); } catch (e) { logger.warn('failed to write avatar cache file', { filePath, error: String(e?.message || e) }); }
+                if (req.query.debug) { const serialized = JSON.stringify({ debug: debugResult, cached: false }, (k, v) => typeof v === 'bigint' ? String(v) : v); res.setHeader('Content-Type','application/json'); return res.send(serialized); }
+                res.setHeader('Content-Type','image/jpeg'); res.setHeader('Cache-Control','public, max-age=86400'); logger.info('serving downloaded avatar from entity.photo', { username, filePath }); return res.send(buf);
+              }
+            } catch (e) {
+              const err = String(e?.message || e);
+              debugResult.errors.push({ stage: 'downloadEntityPhoto', error: err });
+              logger.warn('download entity.photo failed', { username, error: err });
+            }
+          }
+
           // Try high-level helper: getProfilePhotos
           logger.info('calling tg.getProfilePhotos', { username });
-          const photos = await tg.getProfilePhotos(entity, { limit: 1 });
+          // Some TelegramClient versions don't have getProfilePhotos helper
+          let photos = null;
+          try {
+            photos = await tg.getProfilePhotos(entity, { limit: 1 });
+          } catch (err) {
+            debugResult.errors.push({ stage: 'getProfilePhotos', error: String(err?.message || err) });
+            logger.warn('tg.getProfilePhotos not available or failed', { username, error: String(err?.message || err) });
+            photos = null;
+          }
+
           debugResult.photosCount = Array.isArray(photos) ? photos.length : (photos ? 1 : 0);
           logger.info('getProfilePhotos result', { username, photosCount: debugResult.photosCount });
           if (photos && photos.length > 0) {
@@ -70,11 +98,7 @@ telegramRouter.get('/avatar/:username', async (req, res) => {
               if (fileBuffer && fileBuffer.length) {
                 debugResult.profilePhotoDownloaded = true;
                 try { fs.writeFileSync(filePath, fileBuffer); } catch (e) { logger.warn('failed to write avatar cache file', { filePath, error: String(e?.message || e) }); }
-                if (req.query.debug) {
-                const serialized = JSON.stringify({ debug: debugResult, cached: false }, (k, v) => typeof v === 'bigint' ? String(v) : v);
-                res.setHeader('Content-Type', 'application/json');
-                return res.send(serialized);
-              }
+                if (req.query.debug) { const serialized = JSON.stringify({ debug: debugResult, cached: false }, (k, v) => typeof v === 'bigint' ? String(v) : v); res.setHeader('Content-Type','application/json'); return res.send(serialized); }
                 res.setHeader('Content-Type', 'image/jpeg');
                 res.setHeader('Cache-Control', 'public, max-age=86400');
                 logger.info('serving downloaded avatar from tg client', { username, filePath });
@@ -873,7 +897,7 @@ telegramRouter.get('/parsing-results/:resultsId/download', async (req, res) => {
        }
      };
 
-     // Генерируем CSV с разделителем точка с запятой для русской локали Excel
+     // Генерируем CSV с разделителем точ��а с запятой для русской локали Excel
     const delimiter = ';'; // Точка с запятой для русской локали Excel
     
     // Enhanced CSV header with additional columns
@@ -959,7 +983,7 @@ telegramRouter.get('/parsing-results/:resultsId/download', async (req, res) => {
     
     res.setHeader('Content-Type', 'text/csv; charset=utf-8');
     res.setHeader('Content-Disposition', `attachment; filename="${encodeURIComponent(filename)}"`);
-    res.send('\ufeff' + csv); // BOM для правильного отображения кириллицы в Excel
+    res.send('\ufeff' + csv); // BOM для правиль��ого отображения кириллицы в Excel
   } catch (e) {
     logger.error('download parsing-results failed', { error: String(e?.message || e) });
     res.status(500).json({ error: String(e?.message || e) });
