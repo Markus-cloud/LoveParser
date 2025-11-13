@@ -29,7 +29,36 @@ telegramRouter.get('/avatar/:username', async (req, res) => {
       return res.sendFile(filePath);
     }
 
-    // Fetch from Telegram CDN
+    // First, try to resolve and download the user's profile photo via Telegram client (preferred)
+    try {
+      const { getClient } = await import('../services/telegramClient.js');
+      const tg = await getClient();
+      let entity = null;
+      try {
+        entity = await tg.getEntity(username);
+      } catch (e) {
+        // ignore
+      }
+
+      if (entity && entity.photo) {
+        try {
+          // Attempt to download photo using Telegram client
+          const fileBuffer = await tg.downloadFile(entity.photo);
+          if (fileBuffer && fileBuffer.length) {
+            try { fs.writeFileSync(filePath, fileBuffer); } catch (e) {}
+            res.setHeader('Content-Type', 'image/jpeg');
+            res.setHeader('Cache-Control', 'public, max-age=86400');
+            return res.send(fileBuffer);
+          }
+        } catch (e) {
+          // ignore and fallback
+        }
+      }
+    } catch (e) {
+      // ignore and fallback to CDN
+    }
+
+    // Fallback: Fetch from Telegram CDN (may 404 for some users)
     const remoteUrl = `https://t.me/i/userpic/320/${encodeURIComponent(username)}`;
     const response = await fetch(remoteUrl, { method: 'GET' });
     if (!response.ok) {
@@ -622,7 +651,7 @@ telegramRouter.get('/parsing-results/download-all', async (req, res) => {
             'Категория',
             'Приватность',
             'Статус',
-            'Количество подписчиков',
+            'Количе��тво подписчиков',
             'Описание',
             'Проверен',
             'Ограничен',
@@ -835,7 +864,7 @@ telegramRouter.get('/parsing-results/:resultsId/download', async (req, res) => {
       ? `${query} ${dateStr} ${timeStr}`
       : `Результаты поиска ${dateStr} ${timeStr}`;
     
-    // Очищаем имя файла от недопустимых символов
+    // Очищаем имя ��айла от недопустимых символов
     const sanitizedFilename = baseName
       .replace(/[<>:"/\\|?*]/g, '_') // Заменяем недопустимые символы
       .replace(/\s+/g, ' ') // Нормализуем пробелы
@@ -993,7 +1022,7 @@ telegramRouter.get('/audience-results', async (req, res) => {
               name += ` (${resultsData.channelsProcessed}/${resultsData.totalChannels} каналов)`;
             }
           } else {
-            name = `Активная аудитория ${dateStr} ${timeStr}`;
+            name = `Активная ауди��ория ${dateStr} ${timeStr}`;
           }
           
           // Add filter info to name if applicable
