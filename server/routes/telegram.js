@@ -40,15 +40,22 @@ telegramRouter.get('/avatar/:username', async (req, res) => {
         // ignore
       }
 
-      if (entity && entity.photo) {
+      if (entity) {
         try {
-          // Attempt to download photo using Telegram client
-          const fileBuffer = await tg.downloadFile(entity.photo);
-          if (fileBuffer && fileBuffer.length) {
-            try { fs.writeFileSync(filePath, fileBuffer); } catch (e) {}
-            res.setHeader('Content-Type', 'image/jpeg');
-            res.setHeader('Cache-Control', 'public, max-age=86400');
-            return res.send(fileBuffer);
+          // Try high-level helper: getProfilePhotos
+          const photos = await tg.getProfilePhotos(entity, { limit: 1 });
+          if (photos && photos.length > 0) {
+            try {
+              const fileBuffer = await tg.downloadFile(photos[0]);
+              if (fileBuffer && fileBuffer.length) {
+                try { fs.writeFileSync(filePath, fileBuffer); } catch (e) {}
+                res.setHeader('Content-Type', 'image/jpeg');
+                res.setHeader('Cache-Control', 'public, max-age=86400');
+                return res.send(fileBuffer);
+              }
+            } catch (e) {
+              // ignore and fallback
+            }
           }
         } catch (e) {
           // ignore and fallback
@@ -645,13 +652,13 @@ telegramRouter.get('/parsing-results/download-all', async (req, res) => {
 
                 // Enhanced CSV header with additional columns
                 const csvHeader = [
-            'Название канала',
+            'На��вание канала',
             'Username', 
             'Ссылка на канал',
             'Категория',
             'Приватность',
             'Статус',
-            'Количе��тво подписчиков',
+            'Количество подписчиков',
             'Описание',
             'Проверен',
             'Ограничен',
@@ -762,7 +769,7 @@ telegramRouter.get('/parsing-results/:resultsId/download', async (req, res) => {
     const normalizedData = normalizeParsingResults(resultsData);
     const channels = normalizedData.channels || [];
     
-    // Функция для преобразования типа кан��ла в читаемый статус
+    // Функция для преобра��ования типа кан��ла в читаемый статус
      const getStatusLabel = (category) => {
        switch (category) {
          // New canonical categories
@@ -864,7 +871,7 @@ telegramRouter.get('/parsing-results/:resultsId/download', async (req, res) => {
       ? `${query} ${dateStr} ${timeStr}`
       : `Результаты поиска ${dateStr} ${timeStr}`;
     
-    // Очищаем имя ��айла от недопустимых символов
+    // Очищаем имя файла от недопустимых символов
     const sanitizedFilename = baseName
       .replace(/[<>:"/\\|?*]/g, '_') // Заменяем недопустимые символы
       .replace(/\s+/g, ' ') // Нормализуем пробелы
@@ -918,7 +925,7 @@ telegramRouter.get('/parsing-results/channels', async (req, res) => {
           const normalizedData = normalizeParsingResults(resultsData);
           
           // Включаем все каналы из результатов парсинга
-          // Приоритет от��аем Megagroup и Discussion Group, но показываем все
+          // Приорит��т от��аем Megagroup и Discussion Group, но показываем все
           const channelsWithMetadata = normalizedData.channels.map(ch => ({
             ...ch,
             // Добавляем информацию о результате парсинга
@@ -1022,7 +1029,7 @@ telegramRouter.get('/audience-results', async (req, res) => {
               name += ` (${resultsData.channelsProcessed}/${resultsData.totalChannels} каналов)`;
             }
           } else {
-            name = `Активная ауди��ория ${dateStr} ${timeStr}`;
+            name = `Активная аудитория ${dateStr} ${timeStr}`;
           }
           
           // Add filter info to name if applicable
