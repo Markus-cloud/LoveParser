@@ -90,22 +90,17 @@ export default function Login() {
           phoneCode: code,
           password: needsPassword ? password : undefined,
         },
-      }) as SignInResponse;
+      }) as { success?: boolean; user?: { id: string | number; username?: string; firstName?: string; lastName?: string; photo_url?: string; photo_id?: string }; session?: string };
 
-      if (data.success && data.user && data.user.id !== undefined && data.user.id !== null) {
-        const userPayload: RawUser = {
-          id: data.user.id,
-          username: data.user.username ?? undefined,
-          first_name: data.user.first_name ?? data.user.firstName ?? undefined,
-          last_name: data.user.last_name ?? data.user.lastName ?? undefined,
-          firstName: data.user.firstName ?? data.user.first_name ?? undefined,
-          lastName: data.user.lastName ?? data.user.last_name ?? undefined,
-          photo_url: data.user.photo_url ?? data.user.photoUrl ?? undefined,
-          language_code: data.user.language_code ?? undefined,
-          photoId: data.user.photoId ?? data.user.photo_id ?? undefined,
-          lastUpdated: data.user.lastUpdated ?? data.user.last_updated ?? undefined,
-          lastLogin: data.user.lastLogin ?? data.user.last_login ?? undefined,
-          createdAt: data.user.createdAt ?? data.user.created_at ?? undefined,
+      if (data.success && data.user) {
+        const userData = {
+          id: String(data.user.id),
+          username: data.user.username,
+          firstName: data.user.firstName,
+          lastName: data.user.lastName,
+          first_name: data.user.firstName,
+          last_name: data.user.lastName,
+          photo_url: data.user.photo_url,
         };
 
         await login(userPayload, data.session);

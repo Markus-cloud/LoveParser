@@ -129,13 +129,36 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       }
 
       try {
-        const status = await apiFetch('/telegram/auth/status', { method: 'GET' }) as AuthStatusResponse;
+        // Проверяем сохраненного пользователя в localStorage
+        const savedUser = localStorage.getItem(STORAGE_KEY);
+        const savedSession = localStorage.getItem(SESSION_KEY);
 
-        if (!status.authenticated || status.userId === undefined || status.userId === null) {
-          localStorage.removeItem(SESSION_KEY);
-          persistUser(null);
-          if (isMounted) {
-            setUser(null);
+        if (savedUser && savedSession) {
+          try {
+            const userData = JSON.parse(savedUser);
+            
+            // Проверяем статус авторизации на сервере
+            try {
+              const status = await apiFetch('/telegram/auth/status', { method: 'GET' }) as { authenticated: boolean; userId: string | number; photoUrl?: string };
+              
+              // Сравниваем userId как строки
+              if (status.authenticated && String(status.userId) === String(userData.id)) {
+                // Обновляем photo_url из ответа сервера, если он есть
+                if (status.photoUrl && status.photoUrl !== userData.photo_url) {
+                  userData.photo_url = status.photoUrl;
+                  localStorage.setItem(STORAGE_KEY, JSON.stringify(userData));
+                }
+                
+                // Сессия валидна, используем сохраненные данные
+                setUser(userData);
+                setLoading(false);
+                return;
+              }
+            } catch (error) {
+              console.debug('Session validation error:', error);
+            }
+          } catch (error) {
+            console.debug('JSON parse error:', error);
           }
           return;
         }
