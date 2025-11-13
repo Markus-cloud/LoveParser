@@ -133,7 +133,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         } catch (e) {
           // ignore
         }
-        return `${base}/telegram/avatar/${encodeURIComponent(String(userData.username))}`;
+        return `${base}/telegram/avatar/${encodeURIComponent(String(userData.username))}?userId=${encodeURIComponent(String(userData.id))}`;
       })(),
       language_code: userData.language_code,
     };
