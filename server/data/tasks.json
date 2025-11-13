@@ -408,5 +408,33 @@
     "message": "Done",
     "current": 0,
     "total": 10
+  },
+  "2c8673ee-fa03-40b8-b172-6ececd8e81b4": {
+    "id": "2c8673ee-fa03-40b8-b172-6ececd8e81b4",
+    "type": "parse_audience",
+    "payload": {
+      "lastDays": 30,
+      "userId": "408683910",
+      "criteria": {
+        "likes": true,
+        "comments": true,
+        "reposts": true,
+        "frequency": true
+      },
+      "minActivity": 1,
+      "sessionId": "parsing_1763056300729_408683910",
+      "participantsLimit": 100,
+      "bioKeywords": null
+    },
+    "userId": "408683910",
+    "status": "running",
+    "progress": 23,
+    "result": null,
+    "error": null,
+    "createdAt": 1763056366264,
+    "updatedAt": 1763056660575,
+    "message": "Processing channel 4/19: Бизнес молодость Москва",
+    "current": 98,
+    "total": 100
   }
 }
