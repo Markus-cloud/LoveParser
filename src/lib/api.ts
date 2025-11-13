@@ -1,8 +1,5 @@
 import { useAuth } from "@/context/AuthContext";
 
-// Determine API base URL based on environment
-// In production/builder.io, always use relative '/api' to avoid port issues
-// In development, use VITE_API_URL if set, otherwise default to '/api'
 const API_BASE_URL = import.meta.env.PROD 
   ? '/api' 
   : (import.meta.env.VITE_API_URL || '/api');
@@ -13,29 +10,28 @@ export async function apiFetch(path: string, options: RequestInit = {}, userId?:
     ...(options.headers || {}) 
   };
   
-  let body: unknown = null;
-  if (options.body) {
-    // Если body уже строка, парсим её, иначе используем как есть
-    if (typeof options.body === 'string') {
-      try {
-        body = JSON.parse(options.body) as Record<string, unknown>;
-      } catch {
-        body = options.body;
-      }
-    } else {
-      body = options.body;
-    }
+  const url = path.startsWith('http') 
+    ? path 
+    : `${API_BASE_URL}${path.startsWith('/') ? '' : '/'}${path}`;
+  
+  let payload = options.body;
+  if (userId && payload && options.method !== 'GET') {
+    payload = { ...(payload as Record<string, unknown>), userId };
   }
   
-  let url = path.startsWith('http') ? path : `${API_BASE_URL}${path.startsWith('/') ? '' : '/'}${path}`;
   if (options.method === 'GET' && userId) {
     const separator = url.includes('?') ? '&' : '?';
-    url = `${url}${separator}userId=${encodeURIComponent(userId)}`;
+    const finalUrl = `${url}${separator}userId=${encodeURIComponent(userId)}`;
+    
+    const res = await fetch(finalUrl, { ...options, headers });
+    
+    if (!res.ok) {
+      const errorText = await res.text();
+      throw new Error(`API error: ${res.status} ${res.statusText}`);
+    }
+    
+    return res.json();
   }
-  
-  const payload = userId && body && options.method !== 'GET' 
-    ? { ...(body as Record<string, unknown>), userId } 
-    : body;
   
   const res = await fetch(url, { 
     ...options, 
@@ -52,10 +48,6 @@ export async function apiFetch(path: string, options: RequestInit = {}, userId?:
 }
 
 export async function apiDownload(path: string, userId?: string): Promise<void> {
-  // Use the same environment-aware URL resolution as apiFetch
-  const API_BASE_URL = import.meta.env.PROD 
-    ? '/api' 
-    : (import.meta.env.VITE_API_URL || '/api');
   let url = path.startsWith('http') ? path : `${API_BASE_URL}${path.startsWith('/') ? '' : '/'}${path}`;
   
   if (userId) {
@@ -73,7 +65,6 @@ export async function apiDownload(path: string, userId?: string): Promise<void> 
   const a = document.createElement('a');
   a.href = downloadUrl;
   
-  // Extract filename from URL headers or use a default
   const contentDisposition = response.headers.get('content-disposition');
   let filename = 'download';
   if (contentDisposition) {
@@ -95,10 +86,10 @@ export function useApi() {
   const uid = user?.id;
   return {
     post: (path: string, body: Record<string, unknown>): Promise<unknown> =>
-      apiFetch(path, { method: 'POST', body: JSON.stringify(body) }, uid),
+      apiFetch(path, { method: 'POST', body }, uid),
     get: (path: string): Promise<unknown> =>
       apiFetch(path, { method: 'GET' }, uid),
-    download: (path: string, filename?: string): Promise<void> =>
+    download: (path: string): Promise<void> =>
       apiDownload(path, uid),
   };
 }

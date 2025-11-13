@@ -207,7 +207,6 @@ function normalizeParsingResults(resultsData) {
 telegramRouter.post('/auth/send-code', async (req, res) => {
   const startTime = Date.now();
   logger.info('[PERF] POST /auth/send-code received');
-  console.log(`[${new Date().toISOString()}] [PERF] POST /auth/send-code received`);
   
   const { phoneNumber } = req.body || {};
   if (!phoneNumber) {
@@ -216,12 +215,10 @@ telegramRouter.post('/auth/send-code', async (req, res) => {
   try {
     const result = await sendCode(phoneNumber);
     logger.info('[PERF] POST /auth/send-code completed', { elapsed: Date.now() - startTime + 'ms' });
-    console.log(`[${new Date().toISOString()}] [PERF] POST /auth/send-code completed: ${Date.now() - startTime}ms`);
     res.json(result);
   } catch (e) {
     const errorMessage = String(e?.message || e);
     logger.error('send-code failed', { error: errorMessage, elapsed: Date.now() - startTime + 'ms' });
-    console.log(`[${new Date().toISOString()}] [ERROR] POST /auth/send-code failed after ${Date.now() - startTime}ms: ${errorMessage}`);
     res.status(500).json({ error: errorMessage });
   }
 });
@@ -229,7 +226,6 @@ telegramRouter.post('/auth/send-code', async (req, res) => {
 telegramRouter.post('/auth/sign-in', async (req, res) => {
   const startTime = Date.now();
   logger.info('[PERF] POST /auth/sign-in received');
-  console.log(`[${new Date().toISOString()}] [PERF] POST /auth/sign-in received`);
   
   const { phoneCode, password } = req.body || {};
   if (!phoneCode) {
@@ -238,12 +234,10 @@ telegramRouter.post('/auth/sign-in', async (req, res) => {
   try {
     const result = await signIn(phoneCode, password);
     logger.info('[PERF] POST /auth/sign-in completed', { elapsed: Date.now() - startTime + 'ms' });
-    console.log(`[${new Date().toISOString()}] [PERF] POST /auth/sign-in completed: ${Date.now() - startTime}ms`);
     res.json(result);
   } catch (e) {
     const errorMessage = String(e?.message || e);
     logger.error('sign-in failed', { error: errorMessage, elapsed: Date.now() - startTime + 'ms' });
-    console.log(`[${new Date().toISOString()}] [ERROR] POST /auth/sign-in failed after ${Date.now() - startTime}ms: ${errorMessage}`);
     res.status(500).json({ error: errorMessage });
   }
 });

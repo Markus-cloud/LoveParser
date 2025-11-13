@@ -35,17 +35,18 @@ export default function Login() {
   const handlePhoneSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     
-    if (!phoneNumber || phoneNumber.replace(/\D/g, "").length < 10) {
+    const cleanPhoneNumber = phoneNumber.replace(/\D/g, "");
+    if (!phoneNumber || cleanPhoneNumber.length < 10) {
       toast.error("Введите корректный номер телефона");
       return;
     }
 
     setLoading(true);
     try {
-      const data = await apiFetch('/telegram/auth/send-code', {
+      await apiFetch('/telegram/auth/send-code', {
         method: 'POST',
-        body: { phoneNumber: phoneNumber.replace(/\D/g, "") },
-      }) as { error?: string };
+        body: { phoneNumber: cleanPhoneNumber },
+      });
 
       toast.success("Код подтверждения отправлен в Telegram");
       setStep("code");
@@ -74,10 +75,9 @@ export default function Login() {
           phoneCode: code,
           password: needsPassword ? password : undefined,
         },
-      }) as { success?: boolean; user?: { id: string | number; username?: string; firstName?: string; lastName?: string }; error?: string };
+      }) as { success?: boolean; user?: { id: string | number; username?: string; firstName?: string; lastName?: string }; session?: string };
 
       if (data.success && data.user) {
-        // Преобразуем данные пользователя в нужный формат
         const userData = {
           id: String(data.user.id),
           username: data.user.username,
@@ -87,7 +87,6 @@ export default function Login() {
           last_name: data.user.lastName,
         };
         
-        // Сохраняем пользователя через AuthContext
         await login(userData, data.session);
         toast.success("Авторизация успешна!");
         navigate("/");
@@ -97,7 +96,6 @@ export default function Login() {
     } catch (error: unknown) {
       const errorMessage = error instanceof Error ? error.message : "Ошибка авторизации";
       
-      // Проверяем, требуется ли пароль 2FA
       if (errorMessage.includes('Password required') || errorMessage.includes('password') || errorMessage.includes('2FA') || errorMessage.includes('PASSWORD')) {
         if (!needsPassword) {
           setNeedsPassword(true);

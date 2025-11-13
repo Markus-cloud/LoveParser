@@ -167,7 +167,6 @@ export async function sendCode(phoneNumber) {
   }
   const maskedPhone = normalizedPhone.replace(/(\d{3})\d{4}(\d{4})/, '$1****$2');
   logger.info('[PERF] sendCode() called', { phoneNumber: maskedPhone });
-  console.log(`[${new Date().toISOString()}] [PERF] sendCode() started for ${maskedPhone}`);
   
   // Очищаем предыдущее состояние, если есть
   if (authState?.client) {
@@ -192,14 +191,12 @@ export async function sendCode(phoneNumber) {
   const authClientStart = Date.now();
   const tg = await getAuthClient();
   logger.info('[PERF] getAuthClient() completed in sendCode', { elapsed: Date.now() - authClientStart + 'ms' });
-  console.log(`[${new Date().toISOString()}] [PERF] getAuthClient() completed: ${Date.now() - authClientStart}ms`);
   
   try {
     // Используем прямой API вызов для отправки кода
     const { apiId, apiHash } = loadSettings();
     const sendCodeStart = Date.now();
     logger.info('[PERF] Starting auth.SendCode API call');
-    console.log(`[${new Date().toISOString()}] [PERF] Starting auth.SendCode API call`);
     
     const result = await tg.invoke(
       new Api.auth.SendCode({
@@ -211,7 +208,6 @@ export async function sendCode(phoneNumber) {
     );
     
     logger.info('[PERF] auth.SendCode API call completed', { elapsed: Date.now() - sendCodeStart + 'ms' });
-    console.log(`[${new Date().toISOString()}] [PERF] auth.SendCode completed: ${Date.now() - sendCodeStart}ms`);
     
     authState = {
       phoneNumber: normalizedPhone,
@@ -221,7 +217,6 @@ export async function sendCode(phoneNumber) {
     
     logger.info('Code sent to phone', { phoneNumber: maskedPhone });
     logger.info('[PERF] sendCode() total time', { elapsed: Date.now() - startTime + 'ms' });
-    console.log(`[${new Date().toISOString()}] [PERF] sendCode() TOTAL: ${Date.now() - startTime}ms`);
     
     return { 
       phoneCodeHash: result.phoneCodeHash,
@@ -229,7 +224,6 @@ export async function sendCode(phoneNumber) {
     };
   } catch (e) {
     logger.error('Send code failed', { error: String(e?.message || e), elapsed: Date.now() - startTime + 'ms' });
-    console.log(`[${new Date().toISOString()}] [ERROR] sendCode() failed after ${Date.now() - startTime}ms: ${e?.message || e}`);
     try {
       await tg.disconnect();
     } catch (disconnectErr) {
@@ -244,7 +238,6 @@ export async function sendCode(phoneNumber) {
 export async function signIn(phoneCode, password) {
   const startTime = Date.now();
   logger.info('[PERF] signIn() called');
-  console.log(`[${new Date().toISOString()}] [PERF] signIn() started`);
   
   if (!authState) {
     throw new Error('No auth state. Please send code first');
@@ -259,7 +252,6 @@ export async function signIn(phoneCode, password) {
     try {
       const signInStart = Date.now();
       logger.info('[PERF] Starting auth.SignIn API call');
-      console.log(`[${new Date().toISOString()}] [PERF] Starting auth.SignIn API call`);
       
       // Сначала пытаемся войти с кодом
       authResult = await tg.invoke(
@@ -271,7 +263,6 @@ export async function signIn(phoneCode, password) {
       );
       
       logger.info('[PERF] auth.SignIn API call completed', { elapsed: Date.now() - signInStart + 'ms' });
-      console.log(`[${new Date().toISOString()}] [PERF] auth.SignIn completed: ${Date.now() - signInStart}ms`);
     } catch (e) {
       // Если требуется пароль 2FA
       const errorMsg = e.errorMessage || e.message || String(e);
@@ -281,7 +272,6 @@ export async function signIn(phoneCode, password) {
         }
         
         logger.info('[PERF] 2FA password required, starting password check');
-        console.log(`[${new Date().toISOString()}] [PERF] 2FA password required`);
         const passwordStart = Date.now();
         
         // Получаем информацию о пароле
@@ -299,7 +289,6 @@ export async function signIn(phoneCode, password) {
         );
         
         logger.info('[PERF] 2FA password check completed', { elapsed: Date.now() - passwordStart + 'ms' });
-        console.log(`[${new Date().toISOString()}] [PERF] 2FA password check completed: ${Date.now() - passwordStart}ms`);
       } else {
         throw e;
       }
@@ -340,7 +329,6 @@ export async function signIn(phoneCode, password) {
     
     logger.info('User signed in successfully', { userId: userIdString, username: user.username });
     logger.info('[PERF] signIn() total time', { elapsed: Date.now() - startTime + 'ms' });
-    console.log(`[${new Date().toISOString()}] [PERF] signIn() TOTAL: ${Date.now() - startTime}ms`);
     
     return { 
       success: true, 
@@ -354,7 +342,6 @@ export async function signIn(phoneCode, password) {
     };
   } catch (e) {
     logger.error('Sign in failed', { error: String(e?.message || e), elapsed: Date.now() - startTime + 'ms' });
-    console.log(`[${new Date().toISOString()}] [ERROR] signIn() failed after ${Date.now() - startTime}ms: ${e?.message || e}`);
     // НЕ очищаем authState при ошибке, чтобы пользователь мог попробовать снова
     // authState будет очищен только при успешной авторизации или при новой отправке кода
     throw e;
