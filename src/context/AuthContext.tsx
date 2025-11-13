@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useEffect, useState } from 'react';
-import { apiFetch } from '@/lib/api';
+import { apiFetch, API_BASE_URL } from '@/lib/api';
 
 type User = {
   id: string;
