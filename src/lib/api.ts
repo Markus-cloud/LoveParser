@@ -73,7 +73,7 @@ export async function apiFetch(path: string, options: RequestInit = {}, userId?:
 
 function initBodyForPayload(payload: unknown, options: RequestInit): BodyInit | undefined {
   // If original options.body is FormData/Blob/URLSearchParams, prefer passing it directly
-  const originalBody = options.body as any;
+  const originalBody = options.body as BodyInit | undefined;
   if (originalBody instanceof FormData || originalBody instanceof Blob || originalBody instanceof URLSearchParams) {
     return originalBody as BodyInit;
   }
