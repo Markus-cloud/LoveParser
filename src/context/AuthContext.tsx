@@ -62,14 +62,14 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
                   let base = API_BASE_URL;
                   try {
                     if (typeof window !== 'undefined' && API_BASE_URL && API_BASE_URL.startsWith('/')) {
-                      const backendPort = '4000';
-                      const hostPort = window.location.port || '';
-                      if (hostPort && hostPort !== backendPort) {
-                        base = `${window.location.protocol}//${window.location.hostname}:${backendPort}`;
-                      } else {
-                        base = `${window.location.protocol}//${window.location.hostname}${hostPort ? `:${hostPort}` : ''}`;
-                      }
-                    }
+            const backendPort = '4000';
+            const hostPort = window.location.port || '';
+            if (hostPort && hostPort !== backendPort) {
+              base = `${window.location.protocol}//${window.location.hostname}:${backendPort}${API_BASE_URL}`;
+            } else {
+              base = `${window.location.protocol}//${window.location.hostname}${hostPort ? `:${hostPort}` : ''}${API_BASE_URL}`;
+            }
+          }
                   } catch (e) {}
                   userData.photo_url = `${base}/telegram/avatar/${encodeURIComponent(String(username))}?userId=${encodeURIComponent(String(status.userId || userData.id))}`;
                   localStorage.setItem(STORAGE_KEY, JSON.stringify(userData));
