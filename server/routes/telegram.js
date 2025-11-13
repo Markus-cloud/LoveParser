@@ -6,6 +6,53 @@ import { logger, sleep } from '../lib/logger.js';
 
 export const telegramRouter = Router();
 
+// Proxy and cache Telegram user profile avatars for current user
+telegramRouter.get('/avatar/:username', async (req, res) => {
+  try {
+    const { username } = req.params;
+    if (!username) return res.status(400).send('username required');
+
+    const fs = await import('fs');
+    const path = await import('path');
+    const { fileURLToPath } = await import('url');
+    const __filename = fileURLToPath(import.meta.url);
+    const __dirname = path.dirname(__filename);
+    const avatarsDir = path.resolve(__dirname, '..', 'public', 'avatars');
+    if (!fs.existsSync(avatarsDir)) fs.mkdirSync(avatarsDir, { recursive: true });
+
+    // sanitize filename
+    const safeName = String(username).replace(/[^a-zA-Z0-9_-]/g, '_');
+    const filePath = path.join(avatarsDir, `${safeName}.jpg`);
+
+    // If cached file exists, serve it
+    if (fs.existsSync(filePath)) {
+      return res.sendFile(filePath);
+    }
+
+    // Fetch from Telegram CDN
+    const remoteUrl = `https://t.me/i/userpic/320/${encodeURIComponent(username)}`;
+    const response = await fetch(remoteUrl, { method: 'GET' });
+    if (!response.ok) {
+      return res.status(response.status).send('Failed to fetch avatar');
+    }
+
+    const arrayBuffer = await response.arrayBuffer();
+    const buffer = Buffer.from(arrayBuffer);
+    // Save to cache
+    try {
+      fs.writeFileSync(filePath, buffer);
+    } catch (e) {
+      // If can't save, ignore caching but still stream image
+    }
+
+    res.setHeader('Content-Type', response.headers.get('content-type') || 'image/jpeg');
+    res.setHeader('Cache-Control', 'public, max-age=86400');
+    res.send(buffer);
+  } catch (e) {
+    res.status(500).send('Internal error');
+  }
+});
+
 /**
  * Normalizes channel data for backward compatibility
  * Handles both legacy flat records and new enriched records
@@ -686,7 +733,7 @@ telegramRouter.get('/parsing-results/:resultsId/download', async (req, res) => {
     const normalizedData = normalizeParsingResults(resultsData);
     const channels = normalizedData.channels || [];
     
-    // Функция для преобразования типа канала в читаемый статус
+    // Функция для преобразования типа кан��ла в читаемый статус
      const getStatusLabel = (category) => {
        switch (category) {
          // New canonical categories
@@ -720,7 +767,7 @@ telegramRouter.get('/parsing-results/:resultsId/download', async (req, res) => {
       'Название канала',
       'Username', 
       'Ссылка на канал',
-      'Категория',
+      'Категори��',
       'Приватность',
       'Статус',
       'Количество подписчиков',
@@ -842,7 +889,7 @@ telegramRouter.get('/parsing-results/channels', async (req, res) => {
           const normalizedData = normalizeParsingResults(resultsData);
           
           // Включаем все каналы из результатов парсинга
-          // Приоритет отдаем Megagroup и Discussion Group, но показываем все
+          // Приоритет от��аем Megagroup и Discussion Group, но показываем все
           const channelsWithMetadata = normalizedData.channels.map(ch => ({
             ...ch,
             // Добавляем информацию о результате парсинга
@@ -1654,5 +1701,3 @@ taskManager.attachWorker('broadcast', async (task, manager) => {
   }
   return { sent: total };
 });
-
-
