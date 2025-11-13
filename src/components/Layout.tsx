@@ -7,14 +7,24 @@ interface LayoutProps {
 }
 
 export const Layout = ({ children, backgroundImage }: LayoutProps) => {
+  const { user } = useAuth();
+
+  // Prefer an explicit, non-placeholder backgroundImage prop. Otherwise use the authenticated user's photo.
+  const isPlaceholder = (url?: string) => {
+    if (!url) return true;
+    return /dicebear\.com|avataaars|seed=telegram/.test(url);
+  };
+
+  const effectiveBg = !isPlaceholder(backgroundImage) ? backgroundImage : user?.photoUrl;
+
   return (
     <div className="min-h-screen relative overflow-hidden">
       {/* Background with user profile photo or gradient */}
-      <div 
+      <div
         className="fixed inset-0 z-0"
         style={{
-          backgroundImage: backgroundImage 
-            ? `url(${backgroundImage})` 
+          backgroundImage: effectiveBg
+            ? `url(${effectiveBg})`
             : 'linear-gradient(135deg, hsl(210 60% 70%), hsl(195 70% 75%))',
           backgroundSize: 'cover',
           backgroundPosition: 'center',
