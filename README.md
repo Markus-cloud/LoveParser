@@ -68,26 +68,49 @@ This project is built with:
 
 ### Environment variables
 
-📖 **Подробная инструкция по настройке:** см. [SETUP.md](./SETUP.md)
+📖 **For detailed setup instructions:** See [SETUP.md](./SETUP.md)
 
-**Быстрый старт:**
+**Quick Start:**
 
-1. Создайте файл `.env` в корне проекта:
+1. Copy the example file and create `.env.local` in the project root:
 
-```env
-API_PORT=4000
-TELEGRAM_API_ID=your_api_id
-TELEGRAM_API_HASH=your_api_hash
-TELEGRAM_BOT_TOKEN=123456:abc...
+```bash
+cp .env.local.example .env.local
 ```
 
-2. **Получение credentials:**
-   - `TELEGRAM_API_ID` и `TELEGRAM_API_HASH`: получите на https://my.telegram.org
-   - `TELEGRAM_BOT_TOKEN`: получите у @BotFather в Telegram (команда `/newbot`)
+2. Edit `.env.local` and fill in your credentials:
 
-3. После первого запуска сервер автоматически сохранит сессию в `server/data/session.json`
+```env
+# Server Configuration
+API_PORT=4000
 
-**Важно:** Файл `.env` должен быть в `.gitignore` и не должен попадать в Git!
+# Telegram API Configuration (REQUIRED)
+# Get these from https://my.telegram.org/apps
+TELEGRAM_API_ID=your_api_id_here
+TELEGRAM_API_HASH=your_api_hash_here
+
+# Optional: Bot token if needed
+TELEGRAM_BOT_TOKEN=your_bot_token_here
+
+# Node environment
+NODE_ENV=development
+```
+
+3. **Getting credentials:**
+   - `TELEGRAM_API_ID` and `TELEGRAM_API_HASH`: Get from https://my.telegram.org/apps
+   - `TELEGRAM_BOT_TOKEN` (optional): Get from @BotFather in Telegram (command `/newbot`)
+
+4. Start the server:
+
+```bash
+npm run server
+```
+
+After first authentication, the server will automatically save the session in `server/data/session.json`
+
+**Important:** 
+- `.env.local` is already in `.gitignore` and will not be committed to Git
+- Use `.env.local` for local development, `.env` for production/deployment
 
 ### API
 

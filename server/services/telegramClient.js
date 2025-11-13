@@ -8,6 +8,9 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import { logger, sleep } from '../lib/logger.js';
 
+// Load environment variables from .env and .env.local
+// .env.local takes precedence for local development
+dotenv.config({ path: '.env.local' });
 dotenv.config();
 
 const SETTINGS_FILE = 'settings.json';
