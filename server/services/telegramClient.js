@@ -174,7 +174,7 @@ export async function sendCode(phoneNumber) {
     try {
       await authState.client.disconnect();
     } catch (e) {
-      // Игнорируем ошибки отключения
+      // И��норируем ошибки отключения
     }
   }
   
@@ -395,7 +395,8 @@ export async function getAuthStatus() {
       userId: userIdString,
       username: me.username || null,
       firstName: me.firstName || null,
-      lastName: me.lastName || null
+      lastName: me.lastName || null,
+      photo_url: me.username ? `https://t.me/i/userpic/320/${me.username}` : null
     };
   } catch (e) {
     return {
@@ -823,7 +824,7 @@ export async function getParticipantsWithActivity(chat, lastDays = 30, chunk = 2
     lastDays
   });
 
-  // Сначала анализируем сообщения за период, чтобы собрать активных пользователей
+  // Сначала анализируем сообщения за пер��од, чтобы собрать активных пользователей
   // Это позволяет оптимизировать получение участников - получаем только тех, кто был активен
   try {
     let addOffset = 0;
@@ -925,7 +926,7 @@ export async function getParticipantsWithActivity(chat, lastDays = 30, chunk = 2
               }
             }
             
-            // Проверяем реакции (лайки)
+            // ��роверяем реакции (лайки)
             if (criteria.likes !== false && m.reactions) {
               const reactions = m.reactions?.results || [];
               reactions.forEach(reaction => {
@@ -946,7 +947,7 @@ export async function getParticipantsWithActivity(chat, lastDays = 30, chunk = 2
               const forwardedUserId = m.fwdFrom.fromId?.userId?.value || m.fwdFrom.fromId?.userId;
               if (forwardedUserId) {
                 const forwardedUserIdStr = String(forwardedUserId);
-                activeUserIds.add(forwardedUserIdStr); // Добавляем авторов репостов
+                activeUserIds.add(forwardedUserIdStr); // Добавляем а��торов репостов
                 const forwardedActivity = activeUserActivity.get(forwardedUserIdStr) || { likes: 0, comments: 0, reposts: 0, messages: 0 };
                 forwardedActivity.reposts++;
                 activeUserActivity.set(forwardedUserIdStr, forwardedActivity);
@@ -1071,5 +1072,3 @@ export async function sendMessage(peerId, message) {
   await tg.sendMessage(peerId, { message });
   return { ok: true };
 }
-
-
