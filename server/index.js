@@ -10,6 +10,9 @@ import { telegramRouter } from './routes/telegram.js';
 import { settingsRouter } from './routes/settings.js';
 import { userRouter } from './routes/user.js';
 
+// Load environment variables from .env and .env.local
+// .env.local takes precedence for local development
+dotenv.config({ path: '.env.local' });
 dotenv.config();
 
 const __filename = fileURLToPath(import.meta.url);
