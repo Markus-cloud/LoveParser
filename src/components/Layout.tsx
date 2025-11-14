@@ -39,16 +39,20 @@ export const Layout = ({ children, backgroundImage }: LayoutProps) => {
     };
   }, [backgroundImage]);
 
+  const baseBackgroundStyle = {
+    backgroundSize: "cover",
+    backgroundPosition: "center",
+    backgroundRepeat: "no-repeat",
+  };
+
   const backgroundStyle = resolvedBackground
     ? {
+        ...baseBackgroundStyle,
         backgroundImage: `url(${resolvedBackground})`,
-        backgroundSize: "cover",
-        backgroundPosition: "center",
       }
     : {
-        background: "linear-gradient(135deg, hsl(210 60% 70%), hsl(195 70% 75%))",
-        backgroundSize: "cover",
-        backgroundPosition: "center",
+        ...baseBackgroundStyle,
+        backgroundImage: "linear-gradient(135deg, hsl(210 60% 70%), hsl(195 70% 75%))",
       };
 
   return (
