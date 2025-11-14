@@ -6,7 +6,7 @@ import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { Progress } from "@/components/ui/progress";
 import { Users, TrendingUp, Download, Loader2, FileSpreadsheet } from "lucide-react";
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useToast } from "@/hooks/use-toast";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useApi, apiDownload } from "@/lib/api";
@@ -62,6 +62,7 @@ export default function Audience() {
   const [participantsLimit, setParticipantsLimit] = useState<string>("");
   const [bioKeywords, setBioKeywords] = useState<string>("");
   const [searchProgress, setSearchProgress] = useState(0);
+  const eventSourceRef = useRef<EventSource | null>(null);
 
   const loadAudienceResults = async () => {
     if (!user?.id) return;
@@ -112,6 +113,15 @@ export default function Audience() {
       setSelectedSession(null);
     }
   }, [parsingSessions, selectedSessionId]);
+
+  useEffect(() => {
+    return () => {
+      if (eventSourceRef.current) {
+        eventSourceRef.current.close();
+        eventSourceRef.current = null;
+      }
+    };
+  }, []);
 
   const handleParsing = async () => {
     if (!user?.id) {
@@ -207,11 +217,13 @@ export default function Audience() {
         ? '/api' 
         : (import.meta.env.VITE_API_URL || '/api');
       const eventSource = new EventSource(`${API_BASE_URL}/tasks/${response.taskId}/stream?userId=${encodeURIComponent(user.id)}`);
+      eventSourceRef.current = eventSource;
 
       eventSource.onmessage = (event) => {
         const data = JSON.parse(event.data);
         if (data.status === 'completed') {
           eventSource.close();
+          eventSourceRef.current = null;
           setIsLoading(false);
           
           const active = Number(data.result?.active) || 0;
@@ -239,6 +251,7 @@ export default function Audience() {
           });
         } else if (data.status === 'failed') {
           eventSource.close();
+          eventSourceRef.current = null;
           setIsLoading(false);
           toast({
             title: "Ошибка",
@@ -258,6 +271,7 @@ export default function Audience() {
 
       eventSource.onerror = () => {
         eventSource.close();
+        eventSourceRef.current = null;
         setIsLoading(false);
         toast({
           title: "Ошибка",
