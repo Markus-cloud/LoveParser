@@ -1,5 +1,6 @@
-import React, { createContext, useContext, useEffect, useState } from 'react';
-import { apiFetch } from '@/lib/api';
+import React, { createContext, useCallback, useContext, useEffect, useRef, useState } from 'react';
+import { apiFetch, fetchUserPhoto } from '@/lib/api';
+import { sanitizeAvatarUrl } from '@/lib/sanitize';
 
 export type AuthUser = {
   id: string;
@@ -14,6 +15,7 @@ export type AuthUser = {
   lastUpdated?: number | null;
   lastLogin?: number | null;
   createdAt?: number | null;
+  photoUpdatedAt?: number | null;
 };
 
 export type RawUser = Partial<Omit<AuthUser, 'id'>> & {
@@ -24,6 +26,9 @@ export type RawUser = Partial<Omit<AuthUser, 'id'>> & {
   last_updated?: number | null;
   last_login?: number | null;
   created_at?: number | null;
+  photoUrl?: string | null;
+  photoUpdatedAt?: number | null;
+  photo_updated_at?: number | null;
 };
 
 type AuthStatusResponse = {
@@ -33,6 +38,7 @@ type AuthStatusResponse = {
   firstName?: string | null;
   lastName?: string | null;
   photo_url?: string | null;
+  photoUrl?: string | null;
 };
 
 type AuthContextValue = {
@@ -44,6 +50,7 @@ type AuthContextValue = {
 
 const STORAGE_KEY = 'tele_fluence_user';
 const SESSION_KEY = 'tele_fluence_session';
+const PHOTO_REFRESH_INTERVAL_MS = 5 * 60 * 1000;
 
 const AuthContext = createContext<AuthContextValue>({
   user: null,
@@ -60,11 +67,12 @@ function normalizeUser(raw: RawUser | null | undefined): AuthUser | null {
   const id = String(raw.id);
   const firstName = (raw.first_name ?? raw.firstName ?? '') || '';
   const lastName = (raw.last_name ?? raw.lastName ?? '') || '';
-
   const photoId = raw.photoId ?? raw.photo_id ?? null;
-  const lastUpdated = raw.lastUpdated ?? raw.last_updated ?? null;
+  const lastUpdated = raw.lastUpdated ?? raw.last_updated ?? raw.photoUpdatedAt ?? raw.photo_updated_at ?? null;
   const lastLogin = raw.lastLogin ?? raw.last_login ?? null;
   const createdAt = raw.createdAt ?? raw.created_at ?? null;
+  const photoUrl = sanitizeAvatarUrl(raw.photo_url ?? raw.photoUrl ?? null);
+  const photoUpdatedAt = raw.photoUpdatedAt ?? raw.photo_updated_at ?? lastUpdated ?? null;
 
   return {
     id,
@@ -73,25 +81,40 @@ function normalizeUser(raw: RawUser | null | undefined): AuthUser | null {
     last_name: lastName,
     firstName,
     lastName,
-    photo_url: raw.photo_url ?? '',
+    photo_url: photoUrl,
     language_code: raw.language_code ?? null,
     photoId,
     lastUpdated,
     lastLogin,
     createdAt,
+    photoUpdatedAt,
   };
 }
 
 function persistUser(user: AuthUser | null) {
-  if (!user) {
-    localStorage.removeItem(STORAGE_KEY);
+  if (typeof window === 'undefined') {
     return;
   }
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(user));
+
+  if (!user) {
+    window.localStorage.removeItem(STORAGE_KEY);
+    return;
+  }
+
+  const sanitizedUser: AuthUser = {
+    ...user,
+    photo_url: sanitizeAvatarUrl(user.photo_url),
+  };
+
+  window.localStorage.setItem(STORAGE_KEY, JSON.stringify(sanitizedUser));
 }
 
 function parseStoredUser(): AuthUser | null {
-  const savedUser = localStorage.getItem(STORAGE_KEY);
+  if (typeof window === 'undefined') {
+    return null;
+  }
+
+  const savedUser = window.localStorage.getItem(STORAGE_KEY);
   if (!savedUser) {
     return null;
   }
@@ -101,7 +124,7 @@ function parseStoredUser(): AuthUser | null {
     return normalizeUser(raw);
   } catch (error) {
     console.debug('Failed to parse stored user', error);
-    localStorage.removeItem(STORAGE_KEY);
+    window.localStorage.removeItem(STORAGE_KEY);
     return null;
   }
 }
@@ -109,56 +132,106 @@ function parseStoredUser(): AuthUser | null {
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [user, setUser] = useState<AuthUser | null>(null);
   const [loading, setLoading] = useState(true);
+  const isMountedRef = useRef(true);
 
   useEffect(() => {
-    let isMounted = true;
+    return () => {
+      isMountedRef.current = false;
+    };
+  }, []);
 
-    const checkAuth = async () => {
+  const refreshUserPhoto = useCallback(async (userId: string) => {
+    try {
+      const photoResponse = await fetchUserPhoto(userId);
+      const nextPhotoUrl = sanitizeAvatarUrl(photoResponse.photoUrl ?? null);
+      const nextPhotoId = photoResponse.photoId;
+      const nextUpdatedAt = photoResponse.updatedAt;
+
+      if (!isMountedRef.current) {
+        return nextPhotoUrl || null;
+      }
+
+      setUser((prev) => {
+        if (!prev || prev.id !== userId) {
+          return prev;
+        }
+
+        const currentPhotoUrl = sanitizeAvatarUrl(prev.photo_url);
+        const currentPhotoId = prev.photoId ?? null;
+        const currentUpdatedAt = prev.photoUpdatedAt ?? prev.lastUpdated ?? null;
+
+        const resolvedPhotoId = nextPhotoId === undefined ? currentPhotoId : nextPhotoId;
+        const resolvedUpdatedAt = nextUpdatedAt === undefined ? currentUpdatedAt : nextUpdatedAt;
+        const resolvedPhotoUrl = nextPhotoUrl;
+
+        const shouldUpdate =
+          currentPhotoUrl !== resolvedPhotoUrl ||
+          currentPhotoId !== resolvedPhotoId ||
+          currentUpdatedAt !== resolvedUpdatedAt;
+
+        if (!shouldUpdate) {
+          return prev;
+        }
+
+        const updatedUser: AuthUser = {
+          ...prev,
+          photo_url: resolvedPhotoUrl,
+          photoId: resolvedPhotoId,
+          lastUpdated: resolvedUpdatedAt,
+          photoUpdatedAt: resolvedUpdatedAt,
+        };
+
+        persistUser(updatedUser);
+        return updatedUser;
+      });
+
+      return nextPhotoUrl || null;
+    } catch (error) {
+      console.debug('Failed to refresh user photo', error);
+      return null;
+    }
+  }, []);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') {
+      if (isMountedRef.current) {
+        setLoading(false);
+      }
+      return;
+    }
+
+    const initialize = async () => {
+      if (!isMountedRef.current) {
+        return;
+      }
+
       setLoading(true);
 
-      const session = localStorage.getItem(SESSION_KEY);
+      const session = window.localStorage.getItem(SESSION_KEY);
       const storedUser = parseStoredUser();
 
       if (!session) {
         persistUser(null);
-        if (isMounted) {
+        if (isMountedRef.current) {
           setUser(null);
+          setLoading(false);
         }
-        setLoading(false);
         return;
       }
 
-      try {
-        // Проверяем сохраненного пользователя в localStorage
-        const savedUser = localStorage.getItem(STORAGE_KEY);
-        const savedSession = localStorage.getItem(SESSION_KEY);
+      if (storedUser && isMountedRef.current) {
+        setUser(storedUser);
+      }
 
-        if (savedUser && savedSession) {
-          try {
-            const userData = JSON.parse(savedUser);
-            
-            // Проверяем статус авторизации на сервере
-            try {
-              const status = await apiFetch('/telegram/auth/status', { method: 'GET' }) as { authenticated: boolean; userId: string | number; photoUrl?: string };
-              
-              // Сравниваем userId как строки
-              if (status.authenticated && String(status.userId) === String(userData.id)) {
-                // Обновляем photo_url из ответа сервера, если он есть
-                if (status.photoUrl && status.photoUrl !== userData.photo_url) {
-                  userData.photo_url = status.photoUrl;
-                  localStorage.setItem(STORAGE_KEY, JSON.stringify(userData));
-                }
-                
-                // Сессия валидна, используем сохраненные данные
-                setUser(userData);
-                setLoading(false);
-                return;
-              }
-            } catch (error) {
-              console.debug('Session validation error:', error);
-            }
-          } catch (error) {
-            console.debug('JSON parse error:', error);
+      try {
+        const status = await apiFetch('/telegram/auth/status', { method: 'GET' }) as AuthStatusResponse;
+
+        if (!status?.authenticated || status.userId === undefined || status.userId === null) {
+          window.localStorage.removeItem(SESSION_KEY);
+          persistUser(null);
+          if (isMountedRef.current) {
+            setUser(null);
+            setLoading(false);
           }
           return;
         }
@@ -169,13 +242,14 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           first_name: status.firstName ?? undefined,
           last_name: status.lastName ?? undefined,
           photo_url: status.photo_url ?? undefined,
+          photoUrl: status.photoUrl ?? undefined,
         };
 
         let profileRaw: RawUser | null = null;
         try {
           profileRaw = await apiFetch(`/user/${status.userId}`, { method: 'GET' }) as RawUser;
         } catch (profileError) {
-          console.error('Failed to fetch user profile', profileError);
+          console.debug('Failed to fetch user profile', profileError);
         }
 
         const mergedRaw: RawUser = {
@@ -185,44 +259,64 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
         const normalized = normalizeUser(mergedRaw) ?? storedUser;
 
-        if (normalized) {
-          persistUser(normalized);
-          if (isMounted) {
-            setUser(normalized);
-          }
-        } else {
-          localStorage.removeItem(SESSION_KEY);
+        if (!normalized) {
+          window.localStorage.removeItem(SESSION_KEY);
           persistUser(null);
-          if (isMounted) {
+          if (isMountedRef.current) {
             setUser(null);
+            setLoading(false);
           }
+          return;
         }
+
+        persistUser(normalized);
+        if (isMountedRef.current) {
+          setUser(normalized);
+        }
+
+        await refreshUserPhoto(normalized.id);
       } catch (error) {
         console.error('Auth check error:', error);
-        if (storedUser && isMounted) {
-          setUser(storedUser);
-        } else {
-          localStorage.removeItem(SESSION_KEY);
+        if (!storedUser) {
+          window.localStorage.removeItem(SESSION_KEY);
           persistUser(null);
-          if (isMounted) {
+          if (isMountedRef.current) {
             setUser(null);
           }
         }
       } finally {
-        if (isMounted) {
+        if (isMountedRef.current) {
           setLoading(false);
         }
       }
     };
 
-    checkAuth();
+    void initialize();
+  }, [refreshUserPhoto]);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') {
+      return;
+    }
+
+    if (!user?.id) {
+      return;
+    }
+
+    const intervalId = window.setInterval(() => {
+      void refreshUserPhoto(user.id);
+    }, PHOTO_REFRESH_INTERVAL_MS);
 
     return () => {
-      isMounted = false;
+      window.clearInterval(intervalId);
     };
-  }, []);
+  }, [user?.id, refreshUserPhoto]);
 
-  const login = async (userData: RawUser, session?: string) => {
+  const login = useCallback(async (userData: RawUser, session?: string) => {
+    if (!isMountedRef.current) {
+      return;
+    }
+
     setLoading(true);
     try {
       const baseUser = normalizeUser(userData);
@@ -230,12 +324,14 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         throw new Error('Invalid user data received during login');
       }
 
-      if (session) {
-        localStorage.setItem(SESSION_KEY, session);
+      if (session && typeof window !== 'undefined') {
+        window.localStorage.setItem(SESSION_KEY, session);
       }
 
-      // Persist immediately to ensure we have a fallback
       persistUser(baseUser);
+      if (isMountedRef.current) {
+        setUser(baseUser);
+      }
 
       try {
         await apiFetch('/user/login', {
@@ -253,23 +349,32 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         const mergedProfile = normalizeUser({ ...userData, ...(profile || {}) });
         if (mergedProfile) {
           finalUser = mergedProfile;
+          persistUser(finalUser);
+          if (isMountedRef.current) {
+            setUser(finalUser);
+          }
         }
       } catch (error) {
         console.error('Failed to refresh user profile after login:', error);
       }
 
-      persistUser(finalUser);
-      setUser(finalUser);
+      await refreshUserPhoto(baseUser.id);
     } finally {
-      setLoading(false);
+      if (isMountedRef.current) {
+        setLoading(false);
+      }
     }
-  };
+  }, [refreshUserPhoto]);
 
-  const logout = () => {
-    localStorage.removeItem(STORAGE_KEY);
-    localStorage.removeItem(SESSION_KEY);
-    setUser(null);
-  };
+  const logout = useCallback(() => {
+    persistUser(null);
+    if (typeof window !== 'undefined') {
+      window.localStorage.removeItem(SESSION_KEY);
+    }
+    if (isMountedRef.current) {
+      setUser(null);
+    }
+  }, []);
 
   return (
     <AuthContext.Provider value={{ user, loading, login, logout }}>

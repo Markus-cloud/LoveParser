@@ -142,6 +142,15 @@ curl http://localhost:4000/api/settings
 
 ---
 
+## Регрессионная проверка аватара
+
+1. Авторизуйтесь в приложении под аккаунтом Telegram с установленной аватаркой.
+2. В DevTools откройте вкладку **Network** и отфильтруйте запросы по `avatar`. Убедитесь, что браузер загружает `GET /api/user/avatar/<userId>.jpg` со статусом `200 OK` без ошибок CSP в консоли.
+3. Откройте вкладку **Application → Local Storage** и убедитесь, что ключ `tele_fluence_user` содержит поле `photo_url`, совпадающее с путём `/api/user/avatar/<userId>.jpg`.
+4. Для проверки обновления кеша замените файл `server/data/avatars/<userId>.jpg` (или обновите фото в Telegram), затем выполните `await fetch('/api/user/<userId>/photo', { method: 'GET' });` в консоли браузера. В течение ближайших 5 минут AuthContext автоматически повторно запросит `/api/user/<userId>/photo`, после чего аватар обновится без перезагрузки страницы.
+
+---
+
 ## Возможные проблемы и решения
 
 ### ❌ Ошибка: "Cannot find module 'body-parser'"

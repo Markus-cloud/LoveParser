@@ -1,5 +1,6 @@
 import { ReactNode, useEffect, useState } from "react";
 import { Navigation } from "./Navigation";
+import { sanitizeAvatarUrl } from "@/lib/sanitize";
 
 interface LayoutProps {
   children: ReactNode;
@@ -10,7 +11,7 @@ export const Layout = ({ children, backgroundImage }: LayoutProps) => {
   const [resolvedBackground, setResolvedBackground] = useState<string | null>(null);
 
   useEffect(() => {
-    const candidate = backgroundImage?.trim();
+    const candidate = sanitizeAvatarUrl(backgroundImage ?? null);
 
     if (!candidate) {
       setResolvedBackground(null);

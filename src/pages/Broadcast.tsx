@@ -10,11 +10,12 @@ import { useState, useEffect } from "react";
 import { useToast } from "@/hooks/use-toast";
 import { Progress } from "@/components/ui/progress";
 import { useAuth } from "@/context/AuthContext";
+import { sanitizeAvatarUrl } from "@/lib/sanitize";
 
 export default function Broadcast() {
   const { toast } = useToast();
   const { user } = useAuth();
-  const backgroundImage = user?.photo_url && user.photo_url.trim().length > 0 ? user.photo_url : undefined;
+  const backgroundImage = sanitizeAvatarUrl(user?.photo_url ?? null) || undefined;
   const [isLoading, setIsLoading] = useState(false);
   const [progress, setProgress] = useState(0);
   const [message, setMessage] = useState("");

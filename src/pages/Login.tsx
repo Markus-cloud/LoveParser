@@ -8,20 +8,22 @@ import { useAuth } from "@/context/AuthContext";
 import type { RawUser } from "@/context/AuthContext";
 import { Phone, Lock, Loader2 } from "lucide-react";
 import { toast } from "sonner";
-import { apiFetch } from "@/lib/api";
-
-type SignInUserPayload = (RawUser & { id: string | number }) & {
-  photoUrl?: string | null;
-  photo_id?: string | null;
-  last_updated?: number | null;
-  last_login?: number | null;
-  created_at?: number | null;
-};
+import { apiFetch, fetchUserPhoto } from "@/lib/api";
+import { sanitizeAvatarUrl } from "@/lib/sanitize";
 
 type SignInResponse = {
   success?: boolean;
   session?: string;
-  user?: SignInUserPayload;
+  user?: {
+    id: string | number;
+    username?: string | null;
+    firstName?: string | null;
+    lastName?: string | null;
+    photo_url?: string | null;
+    photoUrl?: string | null;
+    photo_id?: string | null;
+    photoId?: string | null;
+  };
 };
 
 export default function Login() {
@@ -35,10 +37,8 @@ export default function Login() {
   const navigate = useNavigate();
 
   const formatPhoneNumber = (value: string) => {
-    // Удаляем все нецифровые символы
     const digits = value.replace(/\D/g, "");
-    
-    // Форматируем номер телефона
+
     if (digits.length === 0) return "";
     if (digits.length <= 1) return `+${digits}`;
     if (digits.length <= 4) return `+${digits}`;
@@ -49,7 +49,7 @@ export default function Login() {
 
   const handlePhoneSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    
+
     const cleanPhoneNumber = phoneNumber.replace(/\D/g, "");
     if (!phoneNumber || cleanPhoneNumber.length < 10) {
       toast.error("Введите корректный номер телефона");
@@ -76,7 +76,7 @@ export default function Login() {
 
   const handleCodeSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    
+
     if (!code || code.length < 5) {
       toast.error("Введите код подтверждения");
       return;
@@ -90,36 +90,62 @@ export default function Login() {
           phoneCode: code,
           password: needsPassword ? password : undefined,
         },
-      }) as { success?: boolean; user?: { id: string | number; username?: string; firstName?: string; lastName?: string; photo_url?: string; photo_id?: string }; session?: string };
+      }) as SignInResponse;
 
-      if (data.success && data.user) {
-        const userData = {
-          id: String(data.user.id),
-          username: data.user.username,
-          firstName: data.user.firstName,
-          lastName: data.user.lastName,
-          first_name: data.user.firstName,
-          last_name: data.user.lastName,
-          photo_url: data.user.photo_url,
-        };
-
-        await login(userPayload, data.session);
-        toast.success("Авторизация успешна!");
-        navigate("/");
-      } else {
+      if (!data.success || !data.user) {
         throw new Error("Не удалось получить данные пользователя");
       }
+
+      const userId = String(data.user.id);
+      const initialPhoto = sanitizeAvatarUrl(data.user.photo_url ?? data.user.photoUrl ?? null);
+
+      const rawUser: RawUser = {
+        id: userId,
+        username: data.user.username ?? undefined,
+        firstName: data.user.firstName ?? undefined,
+        lastName: data.user.lastName ?? undefined,
+        first_name: data.user.firstName ?? undefined,
+        last_name: data.user.lastName ?? undefined,
+        photo_url: initialPhoto,
+        photo_id: data.user.photo_id ?? data.user.photoId ?? undefined,
+      };
+
+      try {
+        const photoResponse = await fetchUserPhoto(userId);
+        const refreshedPhoto = sanitizeAvatarUrl(photoResponse.photoUrl ?? null);
+        rawUser.photo_url = refreshedPhoto;
+
+        if (photoResponse.photoId !== undefined) {
+          rawUser.photo_id = photoResponse.photoId;
+        }
+        if (photoResponse.updatedAt !== undefined) {
+          const updatedAt = photoResponse.updatedAt ?? null;
+          rawUser.last_updated = updatedAt;
+          rawUser.photoUpdatedAt = updatedAt;
+        }
+      } catch (photoError) {
+        console.debug('Avatar refresh during login failed:', photoError);
+      }
+
+      await login(rawUser, data.session);
+      toast.success("Авторизация успешна!");
+      navigate("/");
     } catch (error: unknown) {
       const errorMessage = error instanceof Error ? error.message : "Ошибка авторизации";
-      
-      if (errorMessage.includes('Password required') || errorMessage.includes('password') || errorMessage.includes('2FA') || errorMessage.includes('PASSWORD')) {
+
+      if (
+        errorMessage.includes('Password required') ||
+        errorMessage.includes('password') ||
+        errorMessage.includes('2FA') ||
+        errorMessage.includes('PASSWORD')
+      ) {
         if (!needsPassword) {
           setNeedsPassword(true);
           toast.info("Требуется пароль двухфакторной аутентификации");
           return;
         }
       }
-      
+
       toast.error(errorMessage);
       console.error("Sign in error:", error);
     } finally {
@@ -136,7 +162,6 @@ export default function Login() {
 
   return (
     <div className="min-h-screen flex items-center justify-center p-4 relative overflow-hidden">
-      {/* Background with gradient */}
       <div 
         className="fixed inset-0 z-0"
         style={{
@@ -146,7 +171,6 @@ export default function Login() {
         <div className="absolute inset-0 backdrop-blur-3xl bg-background/40" />
       </div>
 
-      {/* Animated glow effects */}
       <div className="fixed top-0 left-1/4 w-96 h-96 bg-accent/20 rounded-full blur-3xl animate-pulse" />
       <div className="fixed bottom-0 right-1/4 w-96 h-96 bg-primary/20 rounded-full blur-3xl animate-pulse" style={{ animationDelay: '1.5s' }} />
 
@@ -271,4 +295,3 @@ export default function Login() {
     </div>
   );
 }
-
