@@ -15,6 +15,35 @@
     <meta name="twitter:card" content="summary_large_image" />
     <meta name="twitter:site" content="@lovable_dev" />
     <meta name="twitter:image" content="https://lovable.dev/opengraph-image-p98pqg.png" />
+
+    <!-- 
+      Content Security Policy (CSP):
+      - default-src 'self': Only allow same-origin resources by default
+      - script-src: Allow inline scripts (needed for Vite), self, and telegram.org for WebApp SDK
+      - style-src: Allow inline styles (needed by Tailwind/React components) and self
+      - font-src: Allow fonts from self and external CDNs (Perplexity fonts, Google Fonts, etc.)
+      - connect-src: Allow connections to localhost (dev), self, and all HTTPS for WebSockets (SSE)
+      - img-src: Allow images from any HTTPS source
+      - media-src: Allow media from self and HTTPS
+      - data: Allow data URIs (needed for base64 images and some React libraries)
+      - object-src 'none': Prevent plugins
+      - base-uri 'self': Only allow same-origin base URIs
+      - form-action 'self': Only allow form submissions to same-origin
+      unsafe-eval: REMOVED - not needed in current codebase
+    -->
+    <meta http-equiv="Content-Security-Policy" content="
+      default-src 'self';
+      script-src 'self' 'unsafe-inline' https://telegram.org;
+      style-src 'self' 'unsafe-inline';
+      font-src 'self' https://fonts.googleapis.com https://fonts.gstatic.com https://r2cdn.perplexity.ai https://cdn.jsdelivr.net;
+      connect-src 'self' http://localhost:* https:;
+      img-src 'self' https: data:;
+      media-src 'self' https: data:;
+      object-src 'none';
+      base-uri 'self';
+      form-action 'self';
+      frame-ancestors 'self' https://web.telegram.org;
+    " />
   </head>
 
   <body>
