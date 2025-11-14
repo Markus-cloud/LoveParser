@@ -101,7 +101,11 @@ export class TaskManager extends EventEmitter {
 
   broadcast(taskId, task) {
     const set = this.streams.get(taskId);
-    if (!set) return;
+    if (!set) {
+      logger.debug('[SSE] No streams for task', { taskId });
+      return;
+    }
+    
     const payload = JSON.stringify({
       progress: task.progress,
       status: task.status,
@@ -112,6 +116,17 @@ export class TaskManager extends EventEmitter {
       result: task.result || null,
       error: task.error || null,
     });
+    
+    logger.info('[SSE] Broadcasting progress', { 
+      taskId,
+      progress: task.progress,
+      status: task.status,
+      current: task.current || 0,
+      limit: task.limit || task.total || 0,
+      message: task.message || '',
+      streams: set.size
+    });
+    
     for (const res of set) {
       res.write(`data: ${payload}\n\n`);
     }

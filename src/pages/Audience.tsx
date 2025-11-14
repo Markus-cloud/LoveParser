@@ -216,12 +216,28 @@ export default function Audience() {
       const API_BASE_URL = import.meta.env.PROD 
         ? '/api' 
         : (import.meta.env.VITE_API_URL || '/api');
-      const eventSource = new EventSource(`${API_BASE_URL}/tasks/${response.taskId}/stream?userId=${encodeURIComponent(user.id)}`);
+      const sseUrl = `${API_BASE_URL}/tasks/${response.taskId}/stream?userId=${encodeURIComponent(user.id)}`;
+      console.log('[PROGRESS] Opening SSE connection:', sseUrl);
+      const eventSource = new EventSource(sseUrl);
       eventSourceRef.current = eventSource;
+      
+      eventSource.onopen = () => {
+        console.log('[PROGRESS] SSE connection opened');
+      };
 
       eventSource.onmessage = (event) => {
         const data = JSON.parse(event.data);
+        console.log('[PROGRESS] SSE message received:', {
+          status: data.status,
+          progress: data.progress,
+          current: data.current,
+          limit: data.limit,
+          total: data.total,
+          message: data.message
+        });
+        
         if (data.status === 'completed') {
+          console.log('[PROGRESS] Task completed');
           eventSource.close();
           eventSourceRef.current = null;
           setIsLoading(false);
@@ -250,6 +266,7 @@ export default function Audience() {
             description: resultMessage,
           });
         } else if (data.status === 'failed') {
+          console.log('[PROGRESS] Task failed:', data.error);
           eventSource.close();
           eventSourceRef.current = null;
           setIsLoading(false);
@@ -262,10 +279,18 @@ export default function Audience() {
           // Update progress with current/limit from SSE
           const current = Number(data.current) || 0;
           const limit = Number(data.limit ?? data.total ?? limitNum) || limitNum;
+          const progressPercent = limit > 0 ? Math.round((current / limit) * 100) : 0;
+          
+          console.log('[PROGRESS] Progress update:', {
+            current,
+            limit,
+            progressPercent,
+            message: data.message
+          });
           
           setActiveCount(current);
           setEngagementRate(limit > 0 ? Math.round((current / limit) * 100) : 0);
-          setSearchProgress(limit > 0 ? Math.round((current / limit) * 100) : 0);
+          setSearchProgress(progressPercent);
         }
       };
 
