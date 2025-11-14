@@ -1,0 +1,38 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>CSP Test</title>
+    <meta http-equiv="Content-Security-Policy" content="
+      default-src 'self';
+      script-src 'self' https://telegram.org;
+      style-src 'self' 'unsafe-inline';
+      font-src 'self' https://fonts.googleapis.com https://fonts.gstatic.com https://r2cdn.perplexity.ai https://cdn.jsdelivr.net;
+      connect-src 'self' http://localhost:* https:;
+      img-src 'self' https: data:;
+      media-src 'self' https: data:;
+      object-src 'none';
+      base-uri 'self';
+      form-action 'self';
+      frame-ancestors 'self' https://web.telegram.org;
+    ">
+</head>
+<body>
+    <h1>CSP Test Page</h1>
+    <div id="root">Testing CSP</div>
+    
+    <!-- External script (should work) -->
+    <script src="https://telegram.org/js/telegram-web-app.js"></script>
+    
+    <!-- Inline script (should be blocked) -->
+    <script>
+        console.log('This inline script should be blocked by CSP');
+    </script>
+    
+    <!-- Module script (should work) -->
+    <script type="module">
+        console.log('Module script should work');
+    </script>
+</body>
+</html>
