@@ -1285,12 +1285,16 @@ telegramRouter.post('/broadcast', (req, res) => {
  * @param {Object} tg - Telegram client instance
  * @param {Array} users - Array of user objects to enrich
  * @param {Map} userCache - Cache for already fetched user profiles
+ * @param {Function} progressCallback - Optional callback to report progress (currentIndex, total)
  * @returns {Promise<Array>} - Array of enriched user objects
  */
-async function enrichUsersWithFullProfile(tg, users, userCache = new Map()) {
+async function enrichUsersWithFullProfile(tg, users, userCache = new Map(), progressCallback = null) {
   const enrichedUsers = [];
+  const total = users.length;
   
-  for (const user of users) {
+  for (let i = 0; i < users.length; i++) {
+    const user = users[i];
+    
     try {
       const userId = user.id?.value || user.id;
       const userIdString = typeof userId === 'bigint' ? String(userId) : String(userId);
@@ -1298,6 +1302,11 @@ async function enrichUsersWithFullProfile(tg, users, userCache = new Map()) {
       // Check cache first
       if (userCache.has(userIdString)) {
         enrichedUsers.push({ ...user, ...userCache.get(userIdString) });
+        
+        // Report progress
+        if (progressCallback) {
+          progressCallback(i + 1, total);
+        }
         continue;
       }
       
@@ -1322,6 +1331,11 @@ async function enrichUsersWithFullProfile(tg, users, userCache = new Map()) {
       
       enrichedUsers.push(enrichedUser);
       
+      // Report progress
+      if (progressCallback) {
+        progressCallback(i + 1, total);
+      }
+      
       // Rate limiting
       await sleep(100);
     } catch (e) {
@@ -1336,6 +1350,11 @@ async function enrichUsersWithFullProfile(tg, users, userCache = new Map()) {
         bio: null,
         fullName: `${user.firstName || ''} ${user.lastName || ''}`.trim()
       });
+      
+      // Report progress even on error
+      if (progressCallback) {
+        progressCallback(i + 1, total);
+      }
     }
   }
   
@@ -1434,6 +1453,14 @@ taskManager.attachWorker('parse_audience', async (task, manager) => {
     bioKeywords 
   } = task.payload;
   
+  logger.info('[PROGRESS] parse_audience worker started', {
+    taskId: task.id,
+    userId,
+    sessionId,
+    participantsLimit,
+    bioKeywords
+  });
+  
   // Import Api here to avoid top-level import issues
   const { Api } = await import('telegram/tl/index.js');
   
@@ -1443,11 +1470,31 @@ taskManager.attachWorker('parse_audience', async (task, manager) => {
     let totalChannels = 0;
     const userCache = new Map();
     
+    // Initial progress update
+    manager.setStatus(task.id, 'running', { 
+      progress: 0, 
+      current: 0,
+      limit: participantsLimit || 100,
+      message: 'Starting audience search...' 
+    });
+    
+    logger.info('[PROGRESS] Initial status set', {
+      taskId: task.id,
+      progress: 0
+    });
+    
     if (sessionId) {
       // Session-based parsing - process all channels from parsing results
       manager.setStatus(task.id, 'running', { 
-        progress: 5, 
+        progress: 5,
+        current: 0,
+        limit: participantsLimit || 100,
         message: 'Loading parsing session...' 
+      });
+      
+      logger.info('[PROGRESS] Loading session', {
+        taskId: task.id,
+        sessionId
       });
       
       const sessionData = readJson(`parsing_results_${sessionId}.json`, null);
@@ -1525,6 +1572,22 @@ taskManager.attachWorker('parse_audience', async (task, manager) => {
             totalUsers: allUsers.length 
           });
           
+          // Update progress after channel processing
+          const progressAfter = Math.round(10 + (channelsProcessed / totalChannels) * 60);
+          manager.setStatus(task.id, 'running', { 
+            progress: progressAfter,
+            current: allUsers.length,
+            limit: participantsLimit || channels.length * 100,
+            message: `Processed ${channelsProcessed}/${totalChannels} channels, found ${allUsers.length} users` 
+          });
+          
+          logger.info('[PROGRESS] After channel', {
+            channelsProcessed,
+            totalChannels,
+            usersFound: allUsers.length,
+            progress: progressAfter
+          });
+          
         } catch (channelError) {
           logger.warn('Failed to process channel', { 
             channelId: channel.id,
@@ -1593,7 +1656,25 @@ taskManager.attachWorker('parse_audience', async (task, manager) => {
     // Enrich with full profile data
     const { getClient } = await import('../services/telegramClient.js');
     const tg = await getClient();
-    const enrichedUsers = await enrichUsersWithFullProfile(tg, limitedUsers, userCache);
+    
+    // Progress callback for enrichment
+    const enrichmentProgressCallback = (current, total) => {
+      const enrichmentProgress = 75 + Math.round((current / total) * 5); // 75-80%
+      manager.setStatus(task.id, 'running', { 
+        progress: enrichmentProgress,
+        current: current,
+        limit: total,
+        message: `Enriching profiles... ${current}/${total}` 
+      });
+      logger.info('[PROGRESS] Enrichment', { 
+        progress: enrichmentProgress,
+        current,
+        total,
+        percentage: Math.round((current / total) * 100)
+      });
+    };
+    
+    const enrichedUsers = await enrichUsersWithFullProfile(tg, limitedUsers, userCache, enrichmentProgressCallback);
     
     manager.setStatus(task.id, 'running', { 
       progress: 80, 
