@@ -4,6 +4,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
+import { Progress } from "@/components/ui/progress";
 import { Users, TrendingUp, Download, Loader2, FileSpreadsheet } from "lucide-react";
 import { useState, useEffect } from "react";
 import { useToast } from "@/hooks/use-toast";
@@ -60,6 +61,7 @@ export default function Audience() {
   const [engagementRate, setEngagementRate] = useState(0);
   const [participantsLimit, setParticipantsLimit] = useState<string>("");
   const [bioKeywords, setBioKeywords] = useState<string>("");
+  const [searchProgress, setSearchProgress] = useState(0);
 
   const loadAudienceResults = async () => {
     if (!user?.id) return;
@@ -155,6 +157,7 @@ export default function Audience() {
     setIsLoading(true);
     setActiveCount(0);
     setEngagementRate(0);
+    setSearchProgress(0);
 
     try {
       const requestBody: Record<string, unknown> = {
@@ -249,6 +252,7 @@ export default function Audience() {
           
           setActiveCount(current);
           setEngagementRate(limit > 0 ? Math.round((current / limit) * 100) : 0);
+          setSearchProgress(limit > 0 ? Math.round((current / limit) * 100) : 0);
         }
       };
 
@@ -481,6 +485,28 @@ export default function Audience() {
             </Button>
           </div>
         </GlassCard>
+
+        {/* Progress Bar */}
+        {isLoading && (
+          <GlassCard className="animate-fade-in">
+            <div className="space-y-3">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <Loader2 className="w-4 h-4 animate-spin text-primary" />
+                  <span className="text-sm font-medium">Поиск активной аудитории...</span>
+                </div>
+                <span className="text-sm font-bold text-primary">{searchProgress}%</span>
+              </div>
+              <Progress 
+                value={searchProgress} 
+                className="h-2 glass-card border-white/10"
+              />
+              <p className="text-xs text-muted-foreground text-center">
+                Обработано {activeCount} пользователей
+              </p>
+            </div>
+          </GlassCard>
+        )}
 
         {/* Statistics */}
         <div className="grid grid-cols-2 gap-3">
