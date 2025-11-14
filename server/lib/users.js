@@ -40,4 +40,55 @@ export function getUserById(id) {
   return users[String(id)] || null;
 }
 
+/**
+ * Update avatar metadata for a user
+ * @param {string|number} userId - User ID
+ * @param {Object} avatarMeta - Avatar metadata (file_id, file_unique_id, photoUrl, etc.)
+ * @returns {Object} Updated user profile
+ */
+export function updateUserAvatar(userId, avatarMeta) {
+  const users = getUsersMap();
+  const id = String(userId);
+  const existing = users[id];
+  
+  if (!existing) {
+    throw new Error(`User ${id} not found. Please login first.`);
+  }
+
+  const now = Date.now();
+  const profile = {
+    ...existing,
+    photo_url: avatarMeta.photoUrl || existing.photo_url || '',
+    photo_id: avatarMeta.file_unique_id || existing.photo_id || null,
+    photoUpdatedAt: now,
+    // Store bot API metadata for cache validation
+    avatarMetadata: {
+      file_id: avatarMeta.file_id,
+      file_unique_id: avatarMeta.file_unique_id,
+      file_size: avatarMeta.file_size,
+      width: avatarMeta.width,
+      height: avatarMeta.height,
+      downloadedAt: avatarMeta.downloadedAt,
+      fileExtension: avatarMeta.fileExtension
+    }
+  };
+
+  users[id] = profile;
+  saveUsersMap(users);
+  logger.info('User avatar updated', { id, photoUrl: avatarMeta.photoUrl });
+  return profile;
+}
+
+/**
+ * Get cached avatar metadata for a user
+ * @param {string|number} userId - User ID
+ * @returns {Object|null} Avatar metadata or null if not cached
+ */
+export function getUserAvatarMetadata(userId) {
+  const user = getUserById(userId);
+  if (!user || !user.avatarMetadata) {
+    return null;
+  }
+  return user.avatarMetadata;
+}
 

@@ -332,13 +332,21 @@ export async function signIn(phoneCode, password) {
     
     logger.info('User signed in successfully', { userId: userIdString, username: user.username });
     
-    // Fetch and cache user profile photo
+    // Fetch and cache user profile photo using Bot API
     let photoUrl = null;
     let photoId = null;
     try {
-      const photoResult = await fetchUserProfilePhoto(tg, userId);
-      photoUrl = photoResult.photoUrl;
-      photoId = photoResult.photoId;
+      const { downloadUserAvatar, isBotApiConfigured } = await import('./telegramBotApi.js');
+      
+      if (isBotApiConfigured()) {
+        const avatarResult = await downloadUserAvatar(userId);
+        if (avatarResult.metadata) {
+          photoUrl = avatarResult.photoUrl;
+          photoId = avatarResult.metadata.file_unique_id;
+        }
+      } else {
+        logger.warn('TELEGRAM_BOT_TOKEN not configured, skipping avatar download during sign in');
+      }
     } catch (photoErr) {
       logger.warn('Failed to fetch profile photo during sign in', { 
         error: String(photoErr?.message || photoErr) 
@@ -424,7 +432,10 @@ export async function getAuthStatus() {
   }
 }
 
-// Fetch and cache user profile photo
+// DEPRECATED: GramJS-based avatar download replaced with Bot API approach
+// This function is no longer used and kept only for reference
+// Use telegramBotApi.downloadUserAvatar() instead
+/*
 export async function fetchUserProfilePhoto(tg, userId) {
   const startTime = Date.now();
   const userIdString = typeof userId === 'bigint' ? String(userId) : String(userId);
@@ -523,6 +534,7 @@ export async function fetchUserProfilePhoto(tg, userId) {
     return { photoPath: null, photoUrl: null, photoId: null };
   }
 }
+*/
 
 // Convert peer metadata to GramJS InputPeer
 function peerToInputPeer(peer) {
