@@ -107,7 +107,10 @@ export class TaskManager extends EventEmitter {
       status: task.status,
       current: task.current || 0,
       total: task.total || 0,
+      limit: task.limit || task.total || 0,
       message: task.message || '',
+      result: task.result || null,
+      error: task.error || null,
     });
     for (const res of set) {
       res.write(`data: ${payload}\n\n`);
