@@ -1384,6 +1384,43 @@ function deduplicateUsers(users) {
   return deduplicated;
 }
 
+/**
+ * Filters out closed/private profiles (users without username)
+ * @param {Array} users - Array of user objects
+ * @returns {Array} - Filtered array of users with usernames
+ */
+function filterClosedProfiles(users) {
+  return users.filter(user => {
+    const username = user.username;
+    return username && typeof username === 'string' && username.trim() !== '';
+  });
+}
+
+/**
+ * Filters out bots (username ending with "bot" or bot flag)
+ * @param {Array} users - Array of user objects
+ * @returns {Array} - Filtered array of non-bot users
+ */
+function filterBots(users) {
+  return users.filter(user => {
+    // Check bot flag if available
+    if (user.bot === true) {
+      return false;
+    }
+    
+    // Check username ending with "bot"
+    const username = user.username;
+    if (username && typeof username === 'string') {
+      const usernameLower = username.toLowerCase().trim();
+      if (usernameLower.endsWith('bot')) {
+        return false;
+      }
+    }
+    
+    return true;
+  });
+}
+
 // Register workers
 taskManager.attachWorker('parse_audience', async (task, manager) => {
   const { 
@@ -1559,16 +1596,54 @@ taskManager.attachWorker('parse_audience', async (task, manager) => {
     const enrichedUsers = await enrichUsersWithFullProfile(tg, limitedUsers, userCache);
     
     manager.setStatus(task.id, 'running', { 
-      progress: 85, 
+      progress: 80, 
       current: enrichedUsers.length,
       total: participantsLimit || enrichedUsers.length,
+      message: 'Filtering closed profiles...' 
+    });
+    
+    // Filter out closed profiles (users without username)
+    const withUsernameUsers = filterClosedProfiles(enrichedUsers);
+    
+    logger.info('Filtered closed profiles', { 
+      before: enrichedUsers.length, 
+      after: withUsernameUsers.length,
+      filtered: enrichedUsers.length - withUsernameUsers.length
+    });
+    
+    manager.setStatus(task.id, 'running', { 
+      progress: 82, 
+      current: withUsernameUsers.length,
+      total: participantsLimit || withUsernameUsers.length,
+      message: 'Filtering bots...' 
+    });
+    
+    // Filter out bots
+    const nonBotUsers = filterBots(withUsernameUsers);
+    
+    logger.info('Filtered bots', { 
+      before: withUsernameUsers.length, 
+      after: nonBotUsers.length,
+      filtered: withUsernameUsers.length - nonBotUsers.length
+    });
+    
+    manager.setStatus(task.id, 'running', { 
+      progress: 85, 
+      current: nonBotUsers.length,
+      total: participantsLimit || nonBotUsers.length,
       message: 'Applying bio filters...' 
     });
     
     // Apply bio keyword filtering if specified
     const filteredUsers = bioKeywords && bioKeywords.length > 0
-      ? filterUsersByBioKeywords(enrichedUsers, bioKeywords)
-      : enrichedUsers;
+      ? filterUsersByBioKeywords(nonBotUsers, bioKeywords)
+      : nonBotUsers;
+    
+    logger.info('Applied bio keyword filtering', { 
+      before: nonBotUsers.length, 
+      after: filteredUsers.length,
+      bioKeywords: bioKeywords || []
+    });
     
     manager.setStatus(task.id, 'running', { 
       progress: 90, 
