@@ -50,10 +50,10 @@ test(
   indexHtml.includes("script-src 'self'")
 );
 
-// Test 4: script-src allows unsafe-inline (needed for Vite HMR)
+// Test 4: script-src does NOT allow unsafe-inline (security improvement)
 test(
-  "script-src allows 'unsafe-inline'",
-  indexHtml.includes("script-src 'self' 'unsafe-inline'")
+  "script-src does NOT allow 'unsafe-inline' (security improvement)",
+  indexHtml.includes("script-src 'self' https://telegram.org") && !indexHtml.includes("script-src 'self' 'unsafe-inline'")
 );
 
 // Test 5: style-src allows self and inline
@@ -166,6 +166,8 @@ if (failedTests > 0) {
   console.log('   • Allows Telegram Web App script from telegram.org');
   console.log('   • Allows external fonts from multiple CDNs');
   console.log('   • Removes dangerous unsafe-eval directive');
+  console.log('   • Removes unsafe-inline from scripts (security improvement)');
+  console.log('   • Keeps unsafe-inline only for styles (needed for charts)');
   console.log('   • Maintains strong security posture');
   console.log('   • Supports development with localhost connections');
   process.exit(0);

@@ -19,8 +19,8 @@
     <!-- 
       Content Security Policy (CSP):
       - default-src 'self': Only allow same-origin resources by default
-      - script-src: Allow inline scripts (needed for Vite), self, and telegram.org for WebApp SDK
-      - style-src: Allow inline styles (needed by Tailwind/React components) and self
+      - script-src: Allow self and telegram.org for WebApp SDK (unsafe-inline REMOVED - no inline scripts needed)
+      - style-src: Allow inline styles (needed by chart components) and self
       - font-src: Allow fonts from self and external CDNs (Perplexity fonts, Google Fonts, etc.)
       - connect-src: Allow connections to localhost (dev), self, and all HTTPS for WebSockets (SSE)
       - img-src: Allow images from any HTTPS source
@@ -30,10 +30,11 @@
       - base-uri 'self': Only allow same-origin base URIs
       - form-action 'self': Only allow form submissions to same-origin
       unsafe-eval: REMOVED - not needed in current codebase
+      unsafe-inline for scripts: REMOVED - no inline scripts present
     -->
     <meta http-equiv="Content-Security-Policy" content="
       default-src 'self';
-      script-src 'self' 'unsafe-inline' https://telegram.org;
+      script-src 'self' https://telegram.org;
       style-src 'self' 'unsafe-inline';
       font-src 'self' https://fonts.googleapis.com https://fonts.gstatic.com https://r2cdn.perplexity.ai https://cdn.jsdelivr.net;
       connect-src 'self' http://localhost:* https:;
