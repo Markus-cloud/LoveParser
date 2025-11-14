@@ -102,7 +102,7 @@ export class TaskManager extends EventEmitter {
   broadcast(taskId, task) {
     const set = this.streams.get(taskId);
     if (!set) {
-      logger.debug('[SSE] No streams for task', { taskId });
+      logger.info('[SSE] No streams for task', { taskId });
       return;
     }
     
