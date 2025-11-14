@@ -10,6 +10,7 @@ import { useState, useEffect, useMemo } from "react";
 import { useToast } from "@/hooks/use-toast";
 import { useApi, apiDownload } from "@/lib/api";
 import { useAuth } from "@/context/AuthContext";
+import { sanitizeAvatarUrl } from "@/lib/sanitize";
 
 interface Channel {
   id: string | number;
@@ -56,7 +57,7 @@ interface ParsingResultData {
 export default function Parsing() {
   const { toast } = useToast();
   const { user } = useAuth();
-  const backgroundImage = user?.photo_url && user.photo_url.trim().length > 0 ? user.photo_url : undefined;
+  const backgroundImage = sanitizeAvatarUrl(user?.photo_url ?? null) || undefined;
   const api = useApi();
   const [isLoading, setIsLoading] = useState(false);
   const [files, setFiles] = useState<ParsingResult[]>([]);

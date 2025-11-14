@@ -4,6 +4,15 @@ const API_BASE_URL = import.meta.env.PROD
   ? '/api' 
   : (import.meta.env.VITE_API_URL || '/api');
 
+export type UserPhotoResponse = {
+  photoUrl: string | null;
+  photoId?: string | null;
+  updatedAt?: number | null;
+  refreshed?: boolean;
+  cached?: boolean;
+  success?: boolean;
+};
+
 export async function apiFetch(path: string, options: RequestInit = {}, userId?: string): Promise<unknown> {
   const headers: HeadersInit = { 
     'Content-Type': 'application/json', 
@@ -26,7 +35,7 @@ export async function apiFetch(path: string, options: RequestInit = {}, userId?:
     const res = await fetch(finalUrl, { ...options, headers });
     
     if (!res.ok) {
-      const errorText = await res.text();
+      await res.text();
       throw new Error(`API error: ${res.status} ${res.statusText}`);
     }
     
@@ -40,11 +49,52 @@ export async function apiFetch(path: string, options: RequestInit = {}, userId?:
   });
   
   if (!res.ok) {
-    const errorText = await res.text();
+    await res.text();
     throw new Error(`API error: ${res.status} ${res.statusText}`);
   }
   
   return res.json();
+}
+
+export async function fetchUserPhoto(userId: string): Promise<UserPhotoResponse> {
+  const response = await apiFetch(`/user/${encodeURIComponent(userId)}/photo`, { method: 'GET' });
+  const data = typeof response === 'object' && response !== null
+    ? (response as Record<string, unknown>)
+    : {};
+
+  const photoUrl = typeof data.photoUrl === 'string'
+    ? data.photoUrl
+    : typeof data.photo_url === 'string'
+      ? data.photo_url
+      : null;
+
+  const photoId = typeof data.photoId === 'string'
+    ? data.photoId
+    : typeof data.photo_id === 'string'
+      ? data.photo_id
+      : null;
+
+  let updatedAt: number | null = null;
+  if (typeof data.updatedAt === 'number') {
+    updatedAt = data.updatedAt;
+  } else if (typeof data.photoUpdatedAt === 'number') {
+    updatedAt = data.photoUpdatedAt;
+  } else if (typeof data.photo_updated_at === 'number') {
+    updatedAt = data.photo_updated_at;
+  }
+
+  const refreshed = typeof data.refreshed === 'boolean' ? data.refreshed : undefined;
+  const cached = typeof data.cached === 'boolean' ? data.cached : undefined;
+  const success = typeof data.success === 'boolean' ? data.success : undefined;
+
+  return {
+    photoUrl,
+    photoId,
+    updatedAt,
+    refreshed,
+    cached,
+    success,
+  };
 }
 
 export async function apiDownload(path: string, userId?: string): Promise<void> {

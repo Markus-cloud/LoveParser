@@ -3,10 +3,11 @@ import { GlassCard } from "@/components/GlassCard";
 import { Button } from "@/components/ui/button";
 import { BookOpen, Home, Search, Users, Send } from "lucide-react";
 import { useAuth } from "@/context/AuthContext";
+import { sanitizeAvatarUrl } from "@/lib/sanitize";
 
 export default function Help() {
   const { user } = useAuth();
-  const backgroundImage = user?.photo_url && user.photo_url.trim().length > 0 ? user.photo_url : undefined;
+  const backgroundImage = sanitizeAvatarUrl(user?.photo_url ?? null) || undefined;
   const sections = [
     {
       icon: Home,

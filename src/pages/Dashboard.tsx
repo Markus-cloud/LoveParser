@@ -7,6 +7,7 @@ import { Badge } from "@/components/ui/badge";
 import { BarChart3, Users, Send, CheckCircle, Crown } from "lucide-react";
 import { useAuth } from "@/context/AuthContext";
 import { useEffect, useMemo, useState } from "react";
+import { sanitizeAvatarUrl } from "@/lib/sanitize";
 
 export default function Dashboard() {
   const { user: authUser } = useAuth();
@@ -41,10 +42,8 @@ export default function Dashboard() {
         : `@${authUser.username}`
       : "";
 
-    const photoUrl =
-      authUser.photo_url && authUser.photo_url.trim().length > 0
-        ? authUser.photo_url
-        : undefined;
+    const sanitizedPhoto = sanitizeAvatarUrl(authUser.photo_url);
+    const photoUrl = sanitizedPhoto || undefined;
 
     const initialsSource = displayName || username || authUser.id;
     const initials =

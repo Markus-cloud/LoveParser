@@ -10,6 +10,7 @@ import { useToast } from "@/hooks/use-toast";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useApi, apiDownload } from "@/lib/api";
 import { useAuth } from "@/context/AuthContext";
+import { sanitizeAvatarUrl } from "@/lib/sanitize";
 
 interface ParsingSession {
   id: string;
@@ -40,7 +41,7 @@ export default function Audience() {
   const { toast } = useToast();
   const { user } = useAuth();
   const api = useApi();
-  const backgroundImage = user?.photo_url && user.photo_url.trim().length > 0 ? user.photo_url : undefined;
+  const backgroundImage = sanitizeAvatarUrl(user?.photo_url ?? null) || undefined;
   const [isLoading, setIsLoading] = useState(false);
   const [selectedSessionId, setSelectedSessionId] = useState<string>("");
   const [selectedSession, setSelectedSession] = useState<ParsingSession | null>(null);
