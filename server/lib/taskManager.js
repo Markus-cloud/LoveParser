@@ -115,6 +115,8 @@ export class TaskManager extends EventEmitter {
       message: task.message || '',
       result: task.result || null,
       error: task.error || null,
+      sent: task.sent || 0,
+      failed: task.failed || 0,
     });
     
     logger.info('[SSE] Broadcasting progress', { 
@@ -124,6 +126,8 @@ export class TaskManager extends EventEmitter {
       current: task.current || 0,
       limit: task.limit || task.total || 0,
       message: task.message || '',
+      sent: task.sent || 0,
+      failed: task.failed || 0,
       streams: set.size
     });
     

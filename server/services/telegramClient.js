@@ -1197,9 +1197,14 @@ export async function getParticipantsWithActivity(chat, lastDays = 30, chunk = 2
   return { all: totalUsers, active: activeUsers };
 }
 
-export async function sendMessage(peerId, message) {
+export async function sendMessage(peer, message, options = {}) {
   const tg = await ensureClient();
-  await tg.sendMessage(peerId, { message });
+  let target = peer;
+  if (typeof target === 'string') {
+    const normalized = target.trim();
+    target = normalized.startsWith('@') ? normalized.slice(1) : normalized;
+  }
+  await tg.sendMessage(target, { message, ...options });
   return { ok: true };
 }
 
