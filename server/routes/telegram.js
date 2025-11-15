@@ -1272,12 +1272,151 @@ telegramRouter.post('/parse', (req, res) => {
 });
 
 // Background broadcast job
-telegramRouter.post('/broadcast', (req, res) => {
-  const { peerId, message, userIds = [], userId } = req.body || {};
-  if (!userId) return res.status(401).json({ error: 'Unauthorized' });
-  if (!message) return res.status(400).json({ error: 'message required' });
-  const task = taskManager.enqueue('broadcast', { peerId, message, userIds, userId });
-  res.json({ taskId: task.id });
+telegramRouter.post('/broadcast', async (req, res) => {
+  const {
+    message,
+    audienceId,
+    usernames,
+    throttleMs,
+    userId
+  } = req.body || {};
+
+  if (!userId) {
+    return res.status(401).json({ error: 'Unauthorized' });
+  }
+
+  const text = typeof message === 'string' ? message.trim() : '';
+  if (!text) {
+    return res.status(400).json({ error: 'message required' });
+  }
+
+  if (text.length > 4096) {
+    return res.status(400).json({ error: 'message too long (max 4096 characters)' });
+  }
+
+  const normalizeUsername = (value, source) => {
+    if (typeof value !== 'string') {
+      return { username: null, reason: 'invalid_type', source };
+    }
+
+    const trimmed = value.trim();
+    if (!trimmed) {
+      return { username: null, reason: 'empty', source };
+    }
+
+    const sanitized = trimmed.replace(/^@+/, '');
+    if (!sanitized) {
+      return { username: null, reason: 'empty', source };
+    }
+
+    if (!/^[a-zA-Z0-9_]{5,32}$/.test(sanitized)) {
+      return { username: null, reason: 'invalid_format', source, value: trimmed };
+    }
+
+    return { username: sanitized, reason: null, source };
+  };
+
+  const recipientsMap = new Map();
+  const invalidRecipients = [];
+  let duplicateCount = 0;
+
+  const addRecipient = (value, source) => {
+    const { username, reason } = normalizeUsername(value, source);
+    if (!username) {
+      if (reason) {
+        invalidRecipients.push({ value: typeof value === 'string' ? value.trim() : value, source, reason });
+      }
+      return;
+    }
+
+    const key = username.toLowerCase();
+    if (recipientsMap.has(key)) {
+      duplicateCount += 1;
+      return;
+    }
+
+    recipientsMap.set(key, username);
+  };
+
+  // Collect manual usernames from request body (array or string)
+  const manualCandidates = [];
+  if (Array.isArray(usernames)) {
+    for (const entry of usernames) {
+      if (typeof entry === 'string' && entry.trim()) {
+        manualCandidates.push(entry.trim());
+      }
+    }
+  } else if (typeof usernames === 'string' && usernames.trim()) {
+    usernames
+      .split(/[\s,]+/)
+      .map((part) => part.trim())
+      .filter((part) => part.length > 0)
+      .forEach((part) => manualCandidates.push(part));
+  }
+
+  manualCandidates.forEach((candidate) => addRecipient(candidate, 'manual'));
+
+  // Collect recipients from saved audience result if provided
+  let audienceMeta = null;
+  if (audienceId && typeof audienceId === 'string') {
+    const resultsData = readJson(`audience_results_${audienceId}.json`, null);
+
+    if (!resultsData) {
+      return res.status(404).json({ error: 'Audience results not found' });
+    }
+
+    if (resultsData.userId !== userId) {
+      return res.status(403).json({ error: 'Forbidden' });
+    }
+
+    const users = Array.isArray(resultsData.users) ? resultsData.users : [];
+    users.forEach((user) => addRecipient(user?.username || '', 'audience'));
+
+    audienceMeta = {
+      id: resultsData.id,
+      sessionId: resultsData.sessionId || null,
+      timestamp: resultsData.timestamp || null,
+      count: Number(resultsData.count || users.length || 0)
+    };
+  }
+
+  if (recipientsMap.size === 0) {
+    return res.status(400).json({ error: 'Нет валидных получателей для рассылки' });
+  }
+
+  const uniqueRecipients = Array.from(recipientsMap.values());
+  const delay = Number(throttleMs);
+  const throttle = Number.isFinite(delay) && delay >= 500 ? Math.floor(delay) : 1500;
+
+  const task = taskManager.enqueue('broadcast', {
+    userId,
+    message: text,
+    targets: uniqueRecipients,
+    throttleMs: throttle,
+    ignoredRecipients: invalidRecipients,
+    duplicateCount,
+    audienceMeta
+  });
+
+  logger.info('Broadcast task created', {
+    taskId: task.id,
+    userId,
+    totalRecipients: uniqueRecipients.length,
+    manualCandidates: manualCandidates.length,
+    invalidRecipients: invalidRecipients.length,
+    duplicateRecipients: duplicateCount,
+    audienceId: audienceMeta?.id || null,
+    throttleMs: throttle
+  });
+
+  res.json({
+    taskId: task.id,
+    total: uniqueRecipients.length,
+    throttleMs: throttle,
+    ignored: invalidRecipients.length,
+    duplicates: duplicateCount,
+    audienceId: audienceMeta?.id || null
+  });
 });
 
 /**
@@ -1794,15 +1933,177 @@ taskManager.attachWorker('parse_audience', async (task, manager) => {
 });
 
 taskManager.attachWorker('broadcast', async (task, manager) => {
-  const { peerId, message, userIds } = task.payload;
-  const targets = Array.isArray(userIds) && userIds.length ? userIds : [peerId];
-  const total = targets.length;
-  for (let i = 0; i < total; i += 1) {
-    try { await sendMessage(targets[i], message); } catch (e) { logger.warn('sendMessage failed', { to: targets[i], error: String(e?.message || e) }); }
-    if (i % 5 === 0) manager.setProgress(task.id, Math.floor(((i + 1) / total) * 100), { current: i + 1, total });
-    await sleep(700);
+  const {
+    message,
+    targets: rawTargets = [],
+    throttleMs = 1500,
+    ignoredRecipients = [],
+    duplicateCount = 0,
+    audienceMeta = null
+  } = task.payload || {};
+
+  if (!message || typeof message !== 'string') {
+    throw new Error('Broadcast message is required');
   }
-  return { sent: total };
+
+  const preparedTargets = Array.isArray(rawTargets)
+    ? rawTargets
+        .map((username) => (typeof username === 'string' ? username.trim().replace(/^@+/, '') : ''))
+        .filter((username) => username.length > 0)
+    : [];
+
+  const uniqueTargets = [];
+  const seenTargets = new Set();
+  for (const target of preparedTargets) {
+    const key = target.toLowerCase();
+    if (!seenTargets.has(key)) {
+      seenTargets.add(key);
+      uniqueTargets.push(target);
+    }
+  }
+
+  if (uniqueTargets.length === 0) {
+    throw new Error('Нет получателей для рассылки');
+  }
+
+  const total = uniqueTargets.length;
+  const delayMs = Number.isFinite(throttleMs) && throttleMs >= 500 ? throttleMs : 1500;
+
+  logger.info('Broadcast worker started', {
+    taskId: task.id,
+    total,
+    throttleMs: delayMs,
+    audienceId: audienceMeta?.id || null
+  });
+
+  manager.setStatus(task.id, 'running', {
+    progress: 0,
+    current: 0,
+    total,
+    limit: total,
+    message: `Подготовка рассылки (${total} получателей)`,
+    sent: 0,
+    failed: 0
+  });
+
+  const stats = {
+    sent: 0,
+    failed: 0,
+    failures: [],
+    failuresLimit: 50
+  };
+
+  const ignoredList = Array.isArray(ignoredRecipients) ? ignoredRecipients : [];
+  const ignoredCount = ignoredList.length;
+  const duplicateCounter = typeof duplicateCount === 'number' ? duplicateCount : 0;
+
+  for (let index = 0; index < total; index += 1) {
+    const username = uniqueTargets[index];
+    const displayUsername = username.startsWith('@') ? username : `@${username}`;
+    let success = false;
+    let errorMessage = '';
+
+    for (let attempt = 1; attempt <= 2 && !success; attempt += 1) {
+      try {
+        if (attempt === 1) {
+          logger.info('Broadcast send attempt', {
+            taskId: task.id,
+            username: displayUsername,
+            index: index + 1,
+            total
+          });
+        } else {
+          logger.info('Broadcast retry attempt', {
+            taskId: task.id,
+            username: displayUsername,
+            attempt,
+            index: index + 1,
+            total
+          });
+        }
+
+        await sendMessage(username, message);
+        success = true;
+        stats.sent += 1;
+      } catch (err) {
+        errorMessage = String(err?.message || err);
+        logger.warn('Broadcast send failed', {
+          taskId: task.id,
+          username: displayUsername,
+          attempt,
+          error: errorMessage
+        });
+
+        const floodMatch = errorMessage.match(/FLOOD_WAIT_(\d+)/i);
+        if (floodMatch && attempt === 1) {
+          const waitSeconds = Math.min(Number(floodMatch[1]) + 1, 60);
+          manager.setStatus(task.id, 'running', {
+            progress: Math.round(((stats.sent + stats.failed) / total) * 100),
+            current: stats.sent + stats.failed,
+            total,
+            limit: total,
+            message: `Ожидание ${waitSeconds}с из-за лимитов Telegram...`,
+            sent: stats.sent,
+            failed: stats.failed
+          });
+          await sleep(waitSeconds * 1000);
+          continue;
+        }
+
+        if (errorMessage.includes('PEER_FLOOD')) {
+          throw new Error('Telegram временно ограничил отправку сообщений (PEER_FLOOD)');
+        }
+      }
+    }
+
+    if (!success) {
+      stats.failed += 1;
+      if (stats.failures.length < stats.failuresLimit) {
+        stats.failures.push({ username: displayUsername, error: errorMessage });
+      }
+    }
+
+    const processed = stats.sent + stats.failed;
+    const remaining = total - processed;
+    const progress = Math.round((processed / total) * 100);
+
+    manager.setStatus(task.id, 'running', {
+      progress,
+      current: processed,
+      total,
+      limit: total,
+      message: `Отправлено ${stats.sent} • Ошибок ${stats.failed} • Осталось ${remaining}`,
+      sent: stats.sent,
+      failed: stats.failed
+    });
+
+    if (index < total - 1) {
+      const jitterRange = Math.max(Math.floor(delayMs * 0.25), 0);
+      const jitter = jitterRange > 0 ? Math.floor(Math.random() * jitterRange) : 0;
+      await sleep(delayMs + jitter);
+    }
+  }
+
+  logger.info('Broadcast worker completed', {
+    taskId: task.id,
+    sent: stats.sent,
+    failed: stats.failed,
+    total
+  });
+
+  return {
+    sent: stats.sent,
+    failed: stats.failed,
+    total,
+    throttleMs: delayMs,
+    audienceMeta,
+    duplicates: duplicateCounter,
+    ignored: {
+      count: ignoredCount,
+      preview: ignoredList.slice(0, 20)
+    },
+    failures: stats.failures
+  };
 });
 
 
