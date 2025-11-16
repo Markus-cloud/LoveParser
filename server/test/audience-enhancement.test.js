@@ -59,7 +59,7 @@ async function testAudienceParsingEnhancements() {
       ],
       timestamp: new Date().toISOString(),
       count: 2,
-      version: '2.0',
+      version: '3.0',
       enriched: true
     };
     
@@ -100,6 +100,11 @@ async function testAudienceParsingEnhancements() {
             id: '1841800885',
             title: 'Финансист | Бизнес | Инвестиции',
             username: 'finansist_busines'
+          },
+          peer: {
+            id: '123456789',
+            accessHash: '9876543210987654321',
+            type: 'User'
           }
         },
         {
@@ -114,13 +119,18 @@ async function testAudienceParsingEnhancements() {
             id: '1547781249',
             title: 'БИЗНЕС ОНЛАЙН',
             username: 'onlain_biznes_rabota'
+          },
+          peer: {
+            id: '987654321',
+            accessHash: '1234567890987654321',
+            type: 'User'
           }
         }
       ],
       timestamp: new Date().toISOString(),
       count: 2,
       totalFound: 150,
-      version: '2.0'
+      version: '3.0'
     };
     
     writeJson(`audience_results_${mockAudienceResult.id}.json`, mockAudienceResult);
@@ -283,7 +293,8 @@ async function testAudienceParsingEnhancements() {
         fullName: user.fullName || `${user.firstName || ''} ${user.lastName || ''}`.trim(),
         phone: user.phone || null,
         bio: user.bio || null,
-        sourceChannel: user.sourceChannel || null
+        sourceChannel: user.sourceChannel || null,
+        peer: user.peer || null // Add peer metadata field for backward compatibility
       }));
       
       return normalized;
@@ -297,8 +308,65 @@ async function testAudienceParsingEnhancements() {
       fullName: normalizedLegacy.users[0].fullName,
       phone: normalizedLegacy.users[0].phone,
       bio: normalizedLegacy.users[0].bio,
-      sourceChannel: normalizedLegacy.users[0].sourceChannel
+      sourceChannel: normalizedLegacy.users[0].sourceChannel,
+      peer: normalizedLegacy.users[0].peer
     });
+    
+    // Test 7: Peer metadata validation
+    console.log('\n📋 Test 7: Peer metadata validation');
+    
+    function validatePeerMetadata(user) {
+      if (!user.peer) {
+        return { valid: false, error: 'Missing peer metadata' };
+      }
+      
+      const { id, accessHash, type } = user.peer;
+      
+      if (!id) {
+        return { valid: false, error: 'Missing peer.id' };
+      }
+      
+      if (!type) {
+        return { valid: false, error: 'Missing peer.type' };
+      }
+      
+      if (type !== 'User') {
+        return { valid: false, error: `Invalid peer.type: ${type}, expected 'User'` };
+      }
+      
+      // Access hash is optional for legacy compatibility but should be present in new data
+      return { 
+        valid: true, 
+        hasAccessHash: !!accessHash,
+        warning: !accessHash ? 'Access hash missing, broadcast will need runtime lookup' : null
+      };
+    }
+    
+    // Test new format users
+    const newFormatUser = mockAudienceResult.users[0];
+    const newFormatValidation = validatePeerMetadata(newFormatUser);
+    
+    if (newFormatValidation.valid) {
+      console.log('✅ New format user has valid peer metadata');
+      console.log(`   - Peer ID: ${newFormatUser.peer.id}`);
+      console.log(`   - Peer Type: ${newFormatUser.peer.type}`);
+      console.log(`   - Has Access Hash: ${newFormatValidation.hasAccessHash}`);
+      if (newFormatValidation.warning) {
+        console.log(`   - Warning: ${newFormatValidation.warning}`);
+      }
+    } else {
+      console.log('❌ New format user peer metadata validation failed:', newFormatValidation.error);
+    }
+    
+    // Test legacy format users
+    const legacyFormatUser = normalizedLegacy.users[0];
+    const legacyFormatValidation = validatePeerMetadata(legacyFormatUser);
+    
+    if (!legacyFormatValidation.valid && legacyFormatValidation.error === 'Missing peer metadata') {
+      console.log('✅ Legacy format user correctly handles missing peer metadata');
+    } else {
+      console.log('❌ Legacy format user validation unexpected:', legacyFormatValidation);
+    }
     
     console.log('\n🎉 All tests passed! Enhanced audience parsing functionality is working correctly.');
     

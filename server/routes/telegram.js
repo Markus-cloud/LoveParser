@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import { taskManager } from '../lib/taskManager.js';
-import { searchDialogs, searchChannels, sendMessage, getParticipantsWithActivity, sendCode, signIn, getAuthStatus, clearSession } from '../services/telegramClient.js';
+import { searchDialogs, searchChannels, sendMessage, getParticipantsWithActivity, sendCode, signIn, getAuthStatus, clearSession, peerToInputPeer, extractUserPeerMetadata } from '../services/telegramClient.js';
 import { writeJson, readJson } from '../lib/storage.js';
 import { logger, sleep } from '../lib/logger.js';
 
@@ -1315,18 +1315,31 @@ async function enrichUsersWithFullProfile(tg, users, userCache = new Map(), prog
         id: user
       }));
       
+      // Extract peer metadata from the user object
+      const userPeerMetadata = extractUserPeerMetadata(fullUser.users[0]);
+      
+      // Log if access hash is missing for later broadcast logic
+      if (userPeerMetadata && !userPeerMetadata.accessHash) {
+        logger.warn('User access hash missing, broadcast will need runtime lookup', {
+          userId: userPeerMetadata.id,
+          username: fullUser.users[0]?.username
+        });
+      }
+      
       const enrichedUser = {
         ...user,
         phone: fullUser.users[0]?.phone || null,
         bio: fullUser.fullUser?.about || null,
-        fullName: `${user.firstName || ''} ${user.lastName || ''}`.trim()
+        fullName: `${user.firstName || ''} ${user.lastName || ''}`.trim(),
+        peer: userPeerMetadata
       };
       
-      // Cache the enriched data
+      // Cache enriched data (including peer metadata)
       userCache.set(userIdString, {
         phone: enrichedUser.phone,
         bio: enrichedUser.bio,
-        fullName: enrichedUser.fullName
+        fullName: enrichedUser.fullName,
+        peer: enrichedUser.peer
       });
       
       enrichedUsers.push(enrichedUser);
@@ -1343,12 +1356,17 @@ async function enrichUsersWithFullProfile(tg, users, userCache = new Map(), prog
         userId: user.id,
         error: String(e?.message || e) 
       });
-      // Return original user data if enrichment fails
+      
+      // Try to extract peer metadata from original user object as fallback
+      const fallbackPeerMetadata = extractUserPeerMetadata(user);
+      
+      // Return original user data if enrichment fails, but preserve peer metadata if available
       enrichedUsers.push({
         ...user,
         phone: null,
         bio: null,
-        fullName: `${user.firstName || ''} ${user.lastName || ''}`.trim()
+        fullName: `${user.firstName || ''} ${user.lastName || ''}`.trim(),
+        peer: fallbackPeerMetadata
       });
       
       // Report progress even on error
@@ -1752,6 +1770,25 @@ taskManager.attachWorker('parse_audience', async (task, manager) => {
       users: filteredUsers.map((u) => {
         const userId = u.id?.value || u.id;
         const userIdString = typeof userId === 'bigint' ? String(userId) : String(userId);
+        
+        // Extract peer metadata from the user object
+        let peerMetadata = null;
+        if (u.peer) {
+          // Peer metadata already exists from enrichment
+          peerMetadata = u.peer;
+        } else {
+          // Try to extract peer metadata from original user data
+          peerMetadata = extractUserPeerMetadata(u);
+          
+          // Log if access hash is missing for later broadcast logic
+          if (peerMetadata && !peerMetadata.accessHash) {
+            logger.warn('User access hash missing during save, broadcast will need runtime lookup', {
+              userId: peerMetadata.id,
+              username: u.username
+            });
+          }
+        }
+        
         return { 
           id: userIdString, 
           username: u.username || null, 
@@ -1760,13 +1797,14 @@ taskManager.attachWorker('parse_audience', async (task, manager) => {
           fullName: u.fullName || `${u.firstName || ''} ${u.lastName || ''}`.trim(),
           phone: u.phone || null,
           bio: u.bio || null,
-          sourceChannel: u.sourceChannel || null
+          sourceChannel: u.sourceChannel || null,
+          peer: peerMetadata // Add peer metadata for broadcast functionality
         };
       }),
       timestamp: new Date().toISOString(),
       count: filteredUsers.length,
       totalFound: limitedUsers.length,
-      version: '2.0' // New version for enhanced schema
+      version: '3.0' // New version for peer metadata schema
     };
     
     writeJson(`audience_results_${resultsId}.json`, resultsData);
@@ -1797,8 +1835,74 @@ taskManager.attachWorker('broadcast', async (task, manager) => {
   const { peerId, message, userIds } = task.payload;
   const targets = Array.isArray(userIds) && userIds.length ? userIds : [peerId];
   const total = targets.length;
+  
+  // Get Telegram client for fallback lookups
+  const { getClient } = await import('../services/telegramClient.js');
+  const tg = await getClient();
+  
   for (let i = 0; i < total; i += 1) {
-    try { await sendMessage(targets[i], message); } catch (e) { logger.warn('sendMessage failed', { to: targets[i], error: String(e?.message || e) }); }
+    const target = targets[i];
+    
+    try {
+      let resolvedTarget = target;
+      
+      // If target is a peer object, convert to InputPeer
+      if (typeof target === 'object' && target.id && target.type) {
+        try {
+          // Try to use peer metadata directly
+          resolvedTarget = peerToInputPeer(target);
+          logger.info('Using peer metadata for broadcast', {
+            userId: target.id,
+            hasAccessHash: !!target.accessHash,
+            type: target.type
+          });
+        } catch (peerErr) {
+          logger.warn('Failed to convert peer to InputPeer, trying runtime lookup', {
+            userId: target.id,
+            error: String(peerErr?.message || peerErr)
+          });
+          
+          // Fallback: try to get entity at runtime
+          if (target.accessHash) {
+            try {
+              resolvedTarget = await tg.getInputEntity({
+                id: BigInt(target.id),
+                accessHash: BigInt(target.accessHash),
+                className: target.type === 'User' ? 'InputUser' : 'InputPeerUser'
+              });
+            } catch (fallbackErr) {
+              logger.warn('Runtime lookup failed, trying username/ID fallback', {
+                userId: target.id,
+                error: String(fallbackErr?.message || fallbackErr)
+              });
+              
+              // Final fallback: try username or ID
+              if (target.username) {
+                resolvedTarget = target.username;
+              } else {
+                resolvedTarget = target.id;
+              }
+            }
+          } else {
+            logger.warn('No access hash available for runtime lookup, using ID fallback', {
+              userId: target.id
+            });
+            
+            // Final fallback: try ID directly
+            resolvedTarget = target.id;
+          }
+        }
+      }
+      
+      await sendMessage(resolvedTarget, message);
+      
+    } catch (e) {
+      logger.warn('Broadcast message failed', { 
+        target: target,
+        error: String(e?.message || e) 
+      });
+    }
+    
     if (i % 5 === 0) manager.setProgress(task.id, Math.floor(((i + 1) / total) * 100), { current: i + 1, total });
     await sleep(700);
   }
