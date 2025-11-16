@@ -1209,6 +1209,125 @@ export async function sendMessage(peerId, message) {
 }
 
 /**
+ * Sends a message with optional media attachment
+ * @param {Object|String} peerId - Recipient peer (InputPeer, username, or ID)
+ * @param {String} message - Message text
+ * @param {Buffer|null} imageBuffer - Optional image buffer (decoded from base64)
+ * @returns {Promise<Object>} - Send result
+ */
+export async function sendMediaMessage(peerId, message, imageBuffer = null) {
+  const tg = await ensureClient();
+  
+  if (!imageBuffer) {
+    // No media, just send text message
+    await tg.sendMessage(peerId, { message });
+    return { ok: true };
+  }
+  
+  try {
+    // Upload the image first
+    const uploadedFile = await tg.uploadFile({
+      file: imageBuffer,
+      workers: 1,
+    });
+    
+    // Send message with photo
+    await tg.sendMessage(peerId, {
+      message: message,
+      file: uploadedFile
+    });
+    
+    return { ok: true };
+  } catch (e) {
+    logger.error('Failed to send media message', { 
+      error: String(e?.message || e) 
+    });
+    throw e;
+  }
+}
+
+/**
+ * Resolves peer from user object with fallback strategies
+ * @param {Object} tg - Telegram client
+ * @param {Object} user - User object with peer metadata
+ * @returns {Promise<Object>} - Resolved InputPeer
+ */
+export async function resolvePeerFromUser(tg, user) {
+  // Try peer metadata first
+  if (user.peer && user.peer.id && user.peer.accessHash) {
+    try {
+      return peerToInputPeer(user.peer);
+    } catch (e) {
+      logger.warn('Failed to convert peer metadata', { 
+        userId: user.peer.id,
+        error: String(e?.message || e) 
+      });
+    }
+  }
+  
+  // Try username
+  if (user.username) {
+    try {
+      return await resolvePeerFromUsername(tg, user.username);
+    } catch (e) {
+      logger.warn('Failed to resolve by username', { 
+        username: user.username,
+        error: String(e?.message || e) 
+      });
+    }
+  }
+  
+  // Try user ID with access hash
+  if (user.peer && user.peer.id && user.peer.accessHash) {
+    try {
+      return new Api.InputPeerUser({
+        userId: BigInt(user.peer.id),
+        accessHash: BigInt(user.peer.accessHash)
+      });
+    } catch (e) {
+      logger.warn('Failed to create InputPeerUser', { 
+        userId: user.peer.id,
+        error: String(e?.message || e) 
+      });
+    }
+  }
+  
+  // Final fallback: try getInputEntity with user ID
+  if (user.id) {
+    try {
+      return await tg.getInputEntity(BigInt(user.id));
+    } catch (e) {
+      logger.warn('Failed to get input entity by ID', { 
+        userId: user.id,
+        error: String(e?.message || e) 
+      });
+    }
+  }
+  
+  throw new Error(`Failed to resolve peer for user ${user.id || user.username || 'unknown'}`);
+}
+
+/**
+ * Resolves peer from username
+ * @param {Object} tg - Telegram client
+ * @param {String} username - Username (with or without @)
+ * @returns {Promise<Object>} - Resolved InputPeer
+ */
+export async function resolvePeerFromUsername(tg, username) {
+  const cleanUsername = username.startsWith('@') ? username.slice(1) : username;
+  
+  try {
+    return await tg.getInputEntity(cleanUsername);
+  } catch (e) {
+    logger.error('Failed to resolve username', { 
+      username: cleanUsername,
+      error: String(e?.message || e) 
+    });
+    throw e;
+  }
+}
+
+/**
  * Extracts peer metadata from GramJS user object
  * @param {Object} user - GramJS user object
  * @returns {Object} Peer metadata object
