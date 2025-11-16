@@ -11,6 +11,7 @@ import { useToast } from "@/hooks/use-toast";
 import { Progress } from "@/components/ui/progress";
 import { useAuth } from "@/context/AuthContext";
 import { sanitizeAvatarUrl } from "@/lib/sanitize";
+import { BroadcastHistory } from "@/components/BroadcastHistory";
 
 export default function Broadcast() {
   const { toast } = useToast();
@@ -21,6 +22,7 @@ export default function Broadcast() {
   const [message, setMessage] = useState("");
   const [manualNicknames, setManualNicknames] = useState("");
   const [audienceResults, setAudienceResults] = useState<Array<{id: string, name: string, count: number}>>([]);
+  const [historyRefreshTrigger, setHistoryRefreshTrigger] = useState(0);
 
   useEffect(() => {
     const savedResults = JSON.parse(localStorage.getItem('audienceResults') || '[]');
@@ -49,6 +51,8 @@ export default function Broadcast() {
             title: "Рассылка завершена",
             description: "Сообщения успешно отправлены",
           });
+          // Trigger history refresh after broadcast completes
+          setHistoryRefreshTrigger(prev => prev + 1);
           return 100;
         }
         return prev + 10;
@@ -58,7 +62,7 @@ export default function Broadcast() {
 
   return (
     <Layout backgroundImage={backgroundImage}>
-      <div className="space-y-6 max-w-2xl mx-auto animate-slide-up">
+      <div className="space-y-6 max-w-6xl mx-auto animate-slide-up">
         <GlassCard>
           <div className="flex items-center gap-3 mb-6">
             <div className="p-3 rounded-2xl bg-primary/20 glow-effect">
@@ -185,6 +189,9 @@ export default function Broadcast() {
             <p className="text-xs text-muted-foreground mt-1">Ошибки</p>
           </GlassCard>
         </div>
+
+        {/* Broadcast History */}
+        <BroadcastHistory refreshTrigger={historyRefreshTrigger} />
       </div>
     </Layout>
   );

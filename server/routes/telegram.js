@@ -1273,11 +1273,100 @@ telegramRouter.post('/parse', (req, res) => {
 
 // Background broadcast job
 telegramRouter.post('/broadcast', (req, res) => {
-  const { peerId, message, userIds = [], userId } = req.body || {};
+  const { peerId, message, userIds = [], userId, audienceId, audienceName, mode = 'manual' } = req.body || {};
   if (!userId) return res.status(401).json({ error: 'Unauthorized' });
   if (!message) return res.status(400).json({ error: 'message required' });
-  const task = taskManager.enqueue('broadcast', { peerId, message, userIds, userId });
+  const task = taskManager.enqueue('broadcast', { peerId, message, userIds, userId, audienceId, audienceName, mode });
   res.json({ taskId: task.id });
+});
+
+// Get broadcast history list
+telegramRouter.get('/broadcast-history', async (req, res) => {
+  const { userId } = req.query;
+  if (!userId) return res.status(401).json({ error: 'Unauthorized' });
+  
+  try {
+    const { default: fs } = await import('fs');
+    const { getDataPath } = await import('../lib/storage.js');
+    const dataPath = getDataPath();
+    
+    const files = fs.readdirSync(dataPath);
+    const historyFiles = files
+      .filter(file => file.startsWith(`broadcast_history_`) && file.includes(`_${userId}.json`))
+      .map(file => {
+        const data = readJson(file, {});
+        return { filename: file, data };
+      })
+      .filter(({ data }) => data.id) // Filter out empty/invalid files
+      .sort((a, b) => (b.data.createdAt || 0) - (a.data.createdAt || 0));
+    
+    const summaries = historyFiles.map(({ data }) => ({
+      id: data.id,
+      message: data.message,
+      createdAt: data.createdAt,
+      status: data.status,
+      audienceName: data.audienceName,
+      mode: data.mode,
+      successCount: data.successCount || 0,
+      failedCount: data.failedCount || 0,
+      totalCount: data.totalCount || 0
+    }));
+    
+    res.json({ history: summaries });
+  } catch (err) {
+    logger.error('Failed to fetch broadcast history', { error: String(err?.message || err) });
+    res.status(500).json({ error: 'Failed to fetch broadcast history' });
+  }
+});
+
+// Get detailed broadcast history entry
+telegramRouter.get('/broadcast-history/:id', async (req, res) => {
+  const { id } = req.params;
+  const { userId } = req.query;
+  if (!userId) return res.status(401).json({ error: 'Unauthorized' });
+  
+  try {
+    const filename = `broadcast_history_${id}_${userId}.json`;
+    const data = await readJson(filename);
+    res.json(data);
+  } catch (err) {
+    logger.error('Failed to fetch broadcast history detail', { id, error: String(err?.message || err) });
+    res.status(404).json({ error: 'Broadcast history not found' });
+  }
+});
+
+// Download broadcast history as CSV
+telegramRouter.get('/broadcast-history/:id/download', async (req, res) => {
+  const { id } = req.params;
+  const { userId } = req.query;
+  if (!userId) return res.status(401).json({ error: 'Unauthorized' });
+  
+  try {
+    const filename = `broadcast_history_${id}_${userId}.json`;
+    const data = await readJson(filename);
+    
+    // Build CSV
+    const headers = ['Recipient ID', 'Username', 'Full Name', 'Status', 'Error'];
+    const rows = (data.recipients || []).map(r => [
+      r.id || '',
+      r.username || '',
+      r.fullName || '',
+      r.status || 'unknown',
+      r.error || ''
+    ]);
+    
+    const csv = [
+      headers.join(','),
+      ...rows.map(row => row.map(cell => `"${String(cell).replace(/"/g, '""')}"`).join(','))
+    ].join('\n');
+    
+    res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+    res.setHeader('Content-Disposition', `attachment; filename="broadcast_${id}_${Date.now()}.csv"`);
+    res.send('\uFEFF' + csv);
+  } catch (err) {
+    logger.error('Failed to download broadcast history', { id, error: String(err?.message || err) });
+    res.status(404).json({ error: 'Broadcast history not found' });
+  }
 });
 
 /**
@@ -1832,7 +1921,7 @@ taskManager.attachWorker('parse_audience', async (task, manager) => {
 });
 
 taskManager.attachWorker('broadcast', async (task, manager) => {
-  const { peerId, message, userIds } = task.payload;
+  const { peerId, message, userIds, userId, audienceId, audienceName, mode } = task.payload;
   const targets = Array.isArray(userIds) && userIds.length ? userIds : [peerId];
   const total = targets.length;
   
@@ -1840,8 +1929,19 @@ taskManager.attachWorker('broadcast', async (task, manager) => {
   const { getClient } = await import('../services/telegramClient.js');
   const tg = await getClient();
   
+  const recipients = [];
+  let successCount = 0;
+  let failedCount = 0;
+  
   for (let i = 0; i < total; i += 1) {
     const target = targets[i];
+    const recipientInfo = {
+      id: typeof target === 'object' ? target.id : target,
+      username: typeof target === 'object' ? target.username : null,
+      fullName: typeof target === 'object' ? (target.fullName || `${target.firstName || ''} ${target.lastName || ''}`.trim()) : null,
+      status: 'pending',
+      error: null
+    };
     
     try {
       let resolvedTarget = target;
@@ -1895,18 +1995,51 @@ taskManager.attachWorker('broadcast', async (task, manager) => {
       }
       
       await sendMessage(resolvedTarget, message);
+      recipientInfo.status = 'success';
+      successCount++;
       
     } catch (e) {
+      const errorMsg = String(e?.message || e);
       logger.warn('Broadcast message failed', { 
         target: target,
-        error: String(e?.message || e) 
+        error: errorMsg
       });
+      recipientInfo.status = 'failed';
+      recipientInfo.error = errorMsg;
+      failedCount++;
     }
+    
+    recipients.push(recipientInfo);
     
     if (i % 5 === 0) manager.setProgress(task.id, Math.floor(((i + 1) / total) * 100), { current: i + 1, total });
     await sleep(700);
   }
-  return { sent: total };
+  
+  // Save broadcast history
+  const historyId = `broadcast_${Date.now()}`;
+  const historyData = {
+    id: historyId,
+    userId: userId,
+    message: message,
+    createdAt: Date.now(),
+    status: failedCount === 0 ? 'completed' : (successCount === 0 ? 'failed' : 'partial'),
+    audienceId: audienceId || null,
+    audienceName: audienceName || mode || 'Manual',
+    mode: mode || 'manual',
+    totalCount: total,
+    successCount: successCount,
+    failedCount: failedCount,
+    recipients: recipients
+  };
+  
+  try {
+    await writeJson(`broadcast_history_${historyId}_${userId}.json`, historyData);
+    logger.info('Broadcast history saved', { historyId, successCount, failedCount });
+  } catch (err) {
+    logger.error('Failed to save broadcast history', { error: String(err?.message || err) });
+  }
+  
+  return { sent: successCount, failed: failedCount, historyId: historyId };
 });
 
 
