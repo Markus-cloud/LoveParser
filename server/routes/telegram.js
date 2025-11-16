@@ -1448,6 +1448,95 @@ telegramRouter.get('/broadcast-history/:id', (req, res) => {
   }
 });
 
+// Get broadcast history list
+telegramRouter.get('/broadcast-history', async (req, res) => {
+  const { userId } = req.query;
+  if (!userId) return res.status(401).json({ error: 'Unauthorized' });
+  
+  try {
+    const { default: fs } = await import('fs');
+    const { getDataPath } = await import('../lib/storage.js');
+    const dataPath = getDataPath();
+    
+    const files = fs.readdirSync(dataPath);
+    const historyFiles = files
+      .filter(file => file.startsWith(`broadcast_history_`) && file.includes(`_${userId}.json`))
+      .map(file => {
+        const data = readJson(file, {});
+        return { filename: file, data };
+      })
+      .filter(({ data }) => data.id) // Filter out empty/invalid files
+      .sort((a, b) => (b.data.createdAt || 0) - (a.data.createdAt || 0));
+    
+    const summaries = historyFiles.map(({ data }) => ({
+      id: data.id,
+      message: data.message,
+      createdAt: data.createdAt,
+      status: data.status,
+      audienceName: data.audienceName,
+      mode: data.mode,
+      successCount: data.successCount || 0,
+      failedCount: data.failedCount || 0,
+      totalCount: data.totalCount || 0
+    }));
+    
+    res.json({ history: summaries });
+  } catch (err) {
+    logger.error('Failed to fetch broadcast history', { error: String(err?.message || err) });
+    res.status(500).json({ error: 'Failed to fetch broadcast history' });
+  }
+});
+
+// Get detailed broadcast history entry
+telegramRouter.get('/broadcast-history/:id', async (req, res) => {
+  const { id } = req.params;
+  const { userId } = req.query;
+  if (!userId) return res.status(401).json({ error: 'Unauthorized' });
+  
+  try {
+    const filename = `broadcast_history_${id}_${userId}.json`;
+    const data = await readJson(filename);
+    res.json(data);
+  } catch (err) {
+    logger.error('Failed to fetch broadcast history detail', { id, error: String(err?.message || err) });
+    res.status(404).json({ error: 'Broadcast history not found' });
+  }
+});
+
+// Download broadcast history as CSV
+telegramRouter.get('/broadcast-history/:id/download', async (req, res) => {
+  const { id } = req.params;
+  const { userId } = req.query;
+  if (!userId) return res.status(401).json({ error: 'Unauthorized' });
+  
+  try {
+    const filename = `broadcast_history_${id}_${userId}.json`;
+    const data = await readJson(filename);
+    
+    // Build CSV
+    const headers = ['Recipient ID', 'Username', 'Full Name', 'Status', 'Error'];
+    const rows = (data.recipients || []).map(r => [
+      r.id || '',
+      r.username || '',
+      r.fullName || '',
+      r.status || 'unknown',
+      r.error || ''
+    ]);
+    
+    const csv = [
+      headers.join(','),
+      ...rows.map(row => row.map(cell => `"${String(cell).replace(/"/g, '""')}"`).join(','))
+    ].join('\n');
+    
+    res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+    res.setHeader('Content-Disposition', `attachment; filename="broadcast_${id}_${Date.now()}.csv"`);
+    res.send('\uFEFF' + csv);
+  } catch (err) {
+    logger.error('Failed to download broadcast history', { id, error: String(err?.message || err) });
+    res.status(404).json({ error: 'Broadcast history not found' });
+  }
+});
+
 /**
  * Enriches user data with full profile information from Telegram
  * @param {Object} tg - Telegram client instance
@@ -2242,6 +2331,9 @@ taskManager.attachWorker('broadcast', async (task, manager) => {
         mode,
         error: errorMessage
       });
+      recipientInfo.status = 'failed';
+      recipientInfo.error = errorMsg;
+      failedCount++;
     }
     
     const endTime = Date.now();

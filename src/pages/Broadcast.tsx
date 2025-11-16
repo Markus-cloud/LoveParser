@@ -347,7 +347,7 @@ export default function Broadcast() {
 
   return (
     <Layout backgroundImage={backgroundImage}>
-      <div className="space-y-6 max-w-2xl mx-auto animate-slide-up">
+      <div className="space-y-6 max-w-6xl mx-auto animate-slide-up">
         <GlassCard>
           <div className="flex items-center gap-3 mb-6">
             <div className="p-3 rounded-2xl bg-primary/20 glow-effect">
