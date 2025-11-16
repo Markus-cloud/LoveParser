@@ -3,16 +3,13 @@ import react from "@vitejs/plugin-react-swc";
 import path from "path";
 import { componentTagger } from "lovable-tagger";
 
-// Плагин для разрешения ngrok-хостов и логирования входящих запросов
-const allowNgrokHosts = () => ({
-  name: "allow-ngrok-hosts",
+// Плагин для логирования входящих запросов
+const logIncomingHosts = () => ({
+  name: "log-incoming-hosts",
   configureServer(server) {
     server.middlewares.use((req, _res, next) => {
       const host = req.headers.host || "";
-      // Логируем только ngrok-запросы для удобства
-      if (host.includes("ngrok")) {
-        console.log(`[Vite] ✅ Разрешён ngrok-хост: ${host}`);
-      }
+      console.log(`[Vite] Request host: ${host}`);
       next();
     });
   },
@@ -29,14 +26,18 @@ export default defineConfig(({ mode }) => {
       port: 8080,
       strictPort: false,
 
-      // Разрешаем ngrok и другие туннели
+      // Разрешаем localhost и другие хосты для разработки
       allowedHosts: [
-        env.VITE_ALLOWED_HOST || ".ngrok-free.app", // 👈 по умолчанию все ngrok-домены
-      ],
+        "localhost",
+        "127.0.0.1",
+        env.VITE_ALLOWED_HOST, // Опциональный хост из переменной окружения
+      ].filter(Boolean),
 
-      // Настройки HMR для туннелей
+      // Настройки HMR для Vite
       hmr: {
-        clientPort: 8080,
+        host: "localhost",
+        port: 8080,
+        protocol: "http",
       },
 
       proxy: {
@@ -59,7 +60,7 @@ export default defineConfig(({ mode }) => {
 
     plugins: [
       react(),
-      allowNgrokHosts(),
+      logIncomingHosts(),
       mode === "development" && componentTagger(),
     ].filter(Boolean),
 
