@@ -21,7 +21,37 @@ const __dirname = path.dirname(__filename);
 const app = express();
 const PORT = process.env.API_PORT ? Number(process.env.API_PORT) : 4000;
 
-app.use(cors({ origin: '*' }));
+// CORS configuration for localhost development and production
+const corsOptions = {
+  origin: (origin, callback) => {
+    // Allow requests from localhost on any port
+    if (!origin || origin.includes('localhost') || origin.includes('127.0.0.1')) {
+      callback(null, true);
+    }
+    // Allow requests without origin (e.g., mobile apps, Postman)
+    else if (!origin) {
+      callback(null, true);
+    }
+    // Allow production domains if needed
+    else if (process.env.ALLOWED_ORIGINS?.includes(origin)) {
+      callback(null, true);
+    }
+    // In development mode, allow all origins for easier testing
+    else if (process.env.NODE_ENV === 'development') {
+      callback(null, true);
+    }
+    else {
+      callback(new Error('Not allowed by CORS'));
+    }
+  },
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS', 'PATCH', 'HEAD'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'Accept'],
+  credentials: false,
+  optionsSuccessStatus: 200,
+  maxAge: 86400 // 24 hours
+};
+
+app.use(cors(corsOptions));
 app.use(bodyParser.json({ limit: '2mb' }));
 
 // Health check endpoint
