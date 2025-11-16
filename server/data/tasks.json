@@ -228,5 +228,47 @@
     "message": "Done",
     "current": 0,
     "total": 1
+  },
+  "7937a779-e0ff-443f-8831-263c779dbd9b": {
+    "id": "7937a779-e0ff-443f-8831-263c779dbd9b",
+    "type": "broadcast",
+    "payload": {
+      "audienceId": "audience_1762706577574_408683910",
+      "mode": "dm",
+      "manualRecipients": [],
+      "message": "Test message",
+      "maxRecipients": null,
+      "delaySeconds": 2,
+      "userId": "123"
+    },
+    "userId": "123",
+    "status": "failed",
+    "progress": 0,
+    "result": null,
+    "error": "Telegram settings missing: TELEGRAM_API_ID and TELEGRAM_API_HASH",
+    "createdAt": 1763302276630,
+    "updatedAt": 1763302276646
+  },
+  "fbddf860-23cd-41a8-affe-a0a325da221e": {
+    "id": "fbddf860-23cd-41a8-affe-a0a325da221e",
+    "type": "broadcast",
+    "payload": {
+      "mode": "dm",
+      "manualRecipients": [
+        "@user1",
+        "@user2"
+      ],
+      "message": "Test message",
+      "maxRecipients": null,
+      "delaySeconds": 2,
+      "userId": "123"
+    },
+    "userId": "123",
+    "status": "failed",
+    "progress": 0,
+    "result": null,
+    "error": "Telegram settings missing: TELEGRAM_API_ID and TELEGRAM_API_HASH",
+    "createdAt": 1763302276633,
+    "updatedAt": 1763302276653
   }
 }
