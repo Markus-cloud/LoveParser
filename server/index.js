@@ -21,7 +21,44 @@ const __dirname = path.dirname(__filename);
 const app = express();
 const PORT = process.env.API_PORT ? Number(process.env.API_PORT) : 4000;
 
-app.use(cors({ origin: '*' }));
+// Configure CORS to support localhost, ngrok, and other testing origins
+const corsOptions = {
+  origin: (origin, callback) => {
+    // Allow requests with no origin (like mobile apps or curl requests)
+    if (!origin) {
+      return callback(null, true);
+    }
+
+    // List of allowed origin patterns
+    const allowedOrigins = [
+      // localhost with any port
+      /^http:\/\/localhost(:\d+)?$/,
+      /^https:\/\/localhost(:\d+)?$/,
+      /^http:\/\/127\.0\.0\.1(:\d+)?$/,
+      /^https:\/\/127\.0\.0\.1(:\d+)?$/,
+      // ngrok domains
+      /^https:\/\/.*\.ngrok(?:-free)?\.app$/,
+      /^https:\/\/.*\.ngrok\.io$/,
+      // Allow environment variable for custom origins (useful for deployment)
+      ...(process.env.ALLOWED_ORIGINS ? process.env.ALLOWED_ORIGINS.split(',').map(o => new RegExp(`^${o.trim()}$`)) : []),
+    ];
+
+    const isAllowed = allowedOrigins.some(pattern => pattern.test(origin));
+
+    if (isAllowed) {
+      callback(null, true);
+    } else {
+      callback(new Error(`CORS policy: origin ${origin} is not allowed`));
+    }
+  },
+  credentials: true,
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS', 'PATCH'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'Accept'],
+  exposedHeaders: ['Content-Disposition', 'X-Total-Count'],
+  maxAge: 86400 // 24 hours
+};
+
+app.use(cors(corsOptions));
 app.use(bodyParser.json({ limit: '2mb' }));
 
 // Health check endpoint
