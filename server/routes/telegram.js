@@ -2,6 +2,7 @@ import { Router } from 'express';
 import { taskManager } from '../lib/taskManager.js';
 import { searchDialogs, searchChannels, sendMessage, sendMediaMessage, getParticipantsWithActivity, sendCode, signIn, getAuthStatus, clearSession, peerToInputPeer, extractUserPeerMetadata, resolvePeerFromUser, resolvePeerFromUsername } from '../services/telegramClient.js';
 import { writeJson, readJson } from '../lib/storage.js';
+import { generateBroadcastHistoryId, listBroadcastHistory, getBroadcastHistoryById, saveBroadcastHistory, computeBroadcastStatus, buildMessagePreview, deriveAudienceName } from '../lib/broadcastHistory.js';
 import { logger, sleep } from '../lib/logger.js';
 
 export const telegramRouter = Router();
@@ -201,6 +202,25 @@ function normalizeParsingResults(resultsData) {
     version: resultsData.version || '1.0',
     enriched: resultsData.enriched || false
   };
+}
+
+function formatTimestampForFilename(timestamp) {
+  const date = timestamp ? new Date(timestamp) : new Date();
+  if (Number.isNaN(date.getTime())) {
+    return `unknown_${Date.now()}`;
+  }
+  return date.toISOString().replace(/[:]/g, '-');
+}
+
+function escapeCsvValue(value) {
+  if (value === null || value === undefined) {
+    return '';
+  }
+  const stringValue = String(value);
+  if (stringValue.includes('"') || stringValue.includes(',') || stringValue.includes('\n') || stringValue.includes('\r')) {
+    return `"${stringValue.replace(/"/g, '""')}"`;
+  }
+  return stringValue;
 }
 
 // Authentication endpoints
@@ -1318,6 +1338,9 @@ telegramRouter.post('/broadcast', (req, res) => {
     });
   }
   
+  const historyId = generateBroadcastHistoryId(userId);
+  const historyCreatedAt = new Date().toISOString();
+  
   const task = taskManager.enqueue('broadcast', {
     audienceId,
     mode,
@@ -1326,10 +1349,103 @@ telegramRouter.post('/broadcast', (req, res) => {
     imageBase64,
     maxRecipients: maxRecipients ? Number(maxRecipients) : null,
     delaySeconds: delay,
-    userId
+    userId,
+    historyId,
+    historyCreatedAt
   });
   
-  res.json({ taskId: task.id });
+  res.json({ taskId: task.id, historyId });
+});
+
+telegramRouter.get('/broadcast-history', (req, res) => {
+  const { userId, status, dateFrom, dateTo, audienceId } = req.query || {};
+
+  if (!userId) {
+    return res.status(401).json({ error: 'Unauthorized' });
+  }
+
+  try {
+    const filters = {};
+    if (status) filters.status = status;
+    if (dateFrom) filters.dateFrom = dateFrom;
+    if (dateTo) filters.dateTo = dateTo;
+    if (audienceId) filters.audienceId = audienceId;
+
+    const results = listBroadcastHistory(String(userId), filters);
+    res.json({ results });
+  } catch (e) {
+    logger.error('get broadcast-history failed', { error: String(e?.message || e) });
+    res.status(500).json({ error: String(e?.message || e) });
+  }
+});
+
+telegramRouter.get('/broadcast-history/:id/download', (req, res) => {
+  const { userId } = req.query || {};
+  const { id } = req.params;
+
+  if (!userId) {
+    return res.status(401).json({ error: 'Unauthorized' });
+  }
+
+  try {
+    const history = getBroadcastHistoryById(id);
+    if (!history || String(history.userId) !== String(userId)) {
+      return res.status(404).json({ error: 'Broadcast history not found' });
+    }
+
+    const header = ['Recipient', 'Type', 'Status', 'Sent At', 'Error'];
+    const rows = [header.map((value) => escapeCsvValue(value)).join(',')];
+
+    const deliveryLog = Array.isArray(history.deliveryLog) ? history.deliveryLog : [];
+    const defaultType = history.mode === 'chat' ? 'chat' : 'user';
+
+    for (const entry of deliveryLog) {
+      const recipient = entry.recipient || {};
+      const username = recipient.username ? `@${recipient.username}` : '';
+      const name = recipient.name || username || recipient.id || '';
+      const row = [
+        name,
+        recipient.type || defaultType,
+        entry.status || 'unknown',
+        entry.timestamp || '',
+        entry.error || ''
+      ];
+      rows.push(row.map((value) => escapeCsvValue(value)).join(','));
+    }
+
+    const csvContent = rows.join('\n');
+    const filenameTimestamp = formatTimestampForFilename(history.createdAt || history.timestamp);
+    const filename = `broadcast_${filenameTimestamp}.csv`;
+
+    res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+    res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+
+    res.send(`\uFEFF${csvContent}`);
+  } catch (e) {
+    logger.error('download broadcast-history failed', { error: String(e?.message || e) });
+    res.status(500).json({ error: String(e?.message || e) });
+  }
+});
+
+telegramRouter.get('/broadcast-history/:id', (req, res) => {
+  const { userId } = req.query || {};
+  const { id } = req.params;
+
+  if (!userId) {
+    return res.status(401).json({ error: 'Unauthorized' });
+  }
+
+  try {
+    const history = getBroadcastHistoryById(id);
+    if (!history || String(history.userId) !== String(userId)) {
+      return res.status(404).json({ error: 'Broadcast history not found' });
+    }
+
+    res.json(history);
+  } catch (e) {
+    logger.error('get broadcast-history detail failed', { error: String(e?.message || e) });
+    res.status(500).json({ error: String(e?.message || e) });
+  }
 });
 
 /**
@@ -1892,7 +2008,9 @@ taskManager.attachWorker('broadcast', async (task, manager) => {
     imageBase64, 
     maxRecipients, 
     delaySeconds = 2,
-    userId 
+    userId,
+    historyId: providedHistoryId,
+    historyCreatedAt
   } = task.payload;
   
   logger.info('[BROADCAST] Starting broadcast worker', {
@@ -1903,7 +2021,8 @@ taskManager.attachWorker('broadcast', async (task, manager) => {
     hasImage: !!imageBase64,
     maxRecipients,
     delaySeconds,
-    userId
+    userId,
+    historyId: providedHistoryId
   });
   
   // Get Telegram client
@@ -1925,6 +2044,7 @@ taskManager.attachWorker('broadcast', async (task, manager) => {
   
   // Load audience if audienceId provided
   let audienceUsers = [];
+  let audienceName = null;
   if (audienceId) {
     try {
       // Find the audience results file
@@ -1952,6 +2072,7 @@ taskManager.attachWorker('broadcast', async (task, manager) => {
       }
       
       audienceUsers = audienceData.users || [];
+      audienceName = deriveAudienceName(audienceData) || audienceId || null;
       logger.info('[BROADCAST] Loaded audience', { 
         audienceId,
         usersCount: audienceUsers.length 
@@ -1963,6 +2084,8 @@ taskManager.attachWorker('broadcast', async (task, manager) => {
       });
       throw e;
     }
+  } else {
+    audienceName = 'Manual recipients';
   }
   
   // Build recipients array
@@ -2160,33 +2283,42 @@ taskManager.attachWorker('broadcast', async (task, manager) => {
   });
   
   // Persist results to history file
-  const timestamp = Date.now();
-  const historyId = `broadcast_${timestamp}_${userId}`;
+  const normalizedHistoryId = providedHistoryId || generateBroadcastHistoryId(userId || 'unknown');
+  const createdAt = historyCreatedAt || new Date().toISOString();
+  const completedAt = new Date().toISOString();
+  const summary = {
+    total,
+    success: successCount,
+    failed: failedCount,
+    successRate: total > 0 ? ((successCount / total) * 100).toFixed(2) + '%' : '0%'
+  };
+  const status = computeBroadcastStatus(summary);
+  const messagePreview = buildMessagePreview(message);
   const historyData = {
-    id: historyId,
+    id: normalizedHistoryId,
     taskId: task.id,
     userId,
     audienceId: audienceId || null,
+    audienceName: audienceName || (audienceId ? audienceId : 'Manual recipients'),
     mode,
-    message: message.substring(0, 100) + (message.length > 100 ? '...' : ''),
+    message,
+    messagePreview,
     hasImage: !!imageBuffer,
     delaySeconds,
     maxRecipients,
-    timestamp: new Date().toISOString(),
-    summary: {
-      total,
-      success: successCount,
-      failed: failedCount,
-      successRate: total > 0 ? ((successCount / total) * 100).toFixed(2) + '%' : '0%'
-    },
+    createdAt,
+    completedAt,
+    timestamp: createdAt,
+    status,
+    summary,
     deliveryLog
   };
   
   try {
-    writeJson(`broadcast_results_${historyId}.json`, historyData);
+    saveBroadcastHistory(historyData);
     logger.info('[BROADCAST] Results saved to history', {
-      historyId,
-      file: `broadcast_results_${historyId}.json`
+      historyId: normalizedHistoryId,
+      file: `broadcast_results_${normalizedHistoryId}.json`
     });
   } catch (e) {
     logger.error('[BROADCAST] Failed to save history', {
@@ -2198,7 +2330,7 @@ taskManager.attachWorker('broadcast', async (task, manager) => {
     total,
     success: successCount,
     failed: failedCount,
-    historyId
+    historyId: normalizedHistoryId
   };
 });
 
