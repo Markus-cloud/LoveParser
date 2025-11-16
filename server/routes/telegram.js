@@ -1,7 +1,8 @@
 import { Router } from 'express';
 import { taskManager } from '../lib/taskManager.js';
-import { searchDialogs, searchChannels, sendMessage, getParticipantsWithActivity, sendCode, signIn, getAuthStatus, clearSession, peerToInputPeer, extractUserPeerMetadata } from '../services/telegramClient.js';
+import { searchDialogs, searchChannels, sendMessage, sendMediaMessage, getParticipantsWithActivity, sendCode, signIn, getAuthStatus, clearSession, peerToInputPeer, extractUserPeerMetadata, resolvePeerFromUser, resolvePeerFromUsername } from '../services/telegramClient.js';
 import { writeJson, readJson } from '../lib/storage.js';
+import { generateBroadcastHistoryId, listBroadcastHistory, getBroadcastHistoryById, saveBroadcastHistory, computeBroadcastStatus, buildMessagePreview, deriveAudienceName } from '../lib/broadcastHistory.js';
 import { logger, sleep } from '../lib/logger.js';
 
 export const telegramRouter = Router();
@@ -201,6 +202,25 @@ function normalizeParsingResults(resultsData) {
     version: resultsData.version || '1.0',
     enriched: resultsData.enriched || false
   };
+}
+
+function formatTimestampForFilename(timestamp) {
+  const date = timestamp ? new Date(timestamp) : new Date();
+  if (Number.isNaN(date.getTime())) {
+    return `unknown_${Date.now()}`;
+  }
+  return date.toISOString().replace(/[:]/g, '-');
+}
+
+function escapeCsvValue(value) {
+  if (value === null || value === undefined) {
+    return '';
+  }
+  const stringValue = String(value);
+  if (stringValue.includes('"') || stringValue.includes(',') || stringValue.includes('\n') || stringValue.includes('\r')) {
+    return `"${stringValue.replace(/"/g, '""')}"`;
+  }
+  return stringValue;
 }
 
 // Authentication endpoints
@@ -1273,11 +1293,159 @@ telegramRouter.post('/parse', (req, res) => {
 
 // Background broadcast job
 telegramRouter.post('/broadcast', (req, res) => {
-  const { peerId, message, userIds = [], userId, audienceId, audienceName, mode = 'manual' } = req.body || {};
-  if (!userId) return res.status(401).json({ error: 'Unauthorized' });
-  if (!message) return res.status(400).json({ error: 'message required' });
-  const task = taskManager.enqueue('broadcast', { peerId, message, userIds, userId, audienceId, audienceName, mode });
-  res.json({ taskId: task.id });
+  const { 
+    audienceId, 
+    mode, 
+    manualRecipients = [], 
+    message, 
+    imageBase64, 
+    maxRecipients, 
+    delaySeconds = 2,
+    userId 
+  } = req.body || {};
+  
+  // Validate authorization
+  if (!userId) {
+    return res.status(401).json({ error: 'Unauthorized' });
+  }
+  
+  // Validate message
+  if (!message || !message.trim()) {
+    return res.status(400).json({ error: 'message required' });
+  }
+  
+  // Validate mode
+  if (!mode || (mode !== 'dm' && mode !== 'chat')) {
+    return res.status(400).json({ error: 'mode must be "dm" or "chat"' });
+  }
+  
+  // Validate at least one recipient source
+  if (!audienceId && (!manualRecipients || manualRecipients.length === 0)) {
+    return res.status(400).json({ error: 'At least one recipient source required (audienceId or manualRecipients)' });
+  }
+  
+  // Validate delay (must be >= 1s)
+  const delay = Number(delaySeconds) || 2;
+  if (delay < 1) {
+    return res.status(400).json({ error: 'delaySeconds must be at least 1 second' });
+  }
+  
+  // Warn if delay is less than 2 seconds (rate limit risk)
+  if (delay < 2) {
+    logger.warn('Broadcast delay is less than 2 seconds - rate limit risk', { 
+      delaySeconds: delay,
+      userId 
+    });
+  }
+  
+  const historyId = generateBroadcastHistoryId(userId);
+  const historyCreatedAt = new Date().toISOString();
+  
+  const task = taskManager.enqueue('broadcast', {
+    audienceId,
+    mode,
+    manualRecipients: Array.isArray(manualRecipients) ? manualRecipients : [],
+    message,
+    imageBase64,
+    maxRecipients: maxRecipients ? Number(maxRecipients) : null,
+    delaySeconds: delay,
+    userId,
+    historyId,
+    historyCreatedAt
+  });
+  
+  res.json({ taskId: task.id, historyId });
+});
+
+telegramRouter.get('/broadcast-history', (req, res) => {
+  const { userId, status, dateFrom, dateTo, audienceId } = req.query || {};
+
+  if (!userId) {
+    return res.status(401).json({ error: 'Unauthorized' });
+  }
+
+  try {
+    const filters = {};
+    if (status) filters.status = status;
+    if (dateFrom) filters.dateFrom = dateFrom;
+    if (dateTo) filters.dateTo = dateTo;
+    if (audienceId) filters.audienceId = audienceId;
+
+    const results = listBroadcastHistory(String(userId), filters);
+    res.json({ results });
+  } catch (e) {
+    logger.error('get broadcast-history failed', { error: String(e?.message || e) });
+    res.status(500).json({ error: String(e?.message || e) });
+  }
+});
+
+telegramRouter.get('/broadcast-history/:id/download', (req, res) => {
+  const { userId } = req.query || {};
+  const { id } = req.params;
+
+  if (!userId) {
+    return res.status(401).json({ error: 'Unauthorized' });
+  }
+
+  try {
+    const history = getBroadcastHistoryById(id);
+    if (!history || String(history.userId) !== String(userId)) {
+      return res.status(404).json({ error: 'Broadcast history not found' });
+    }
+
+    const header = ['Recipient', 'Type', 'Status', 'Sent At', 'Error'];
+    const rows = [header.map((value) => escapeCsvValue(value)).join(',')];
+
+    const deliveryLog = Array.isArray(history.deliveryLog) ? history.deliveryLog : [];
+    const defaultType = history.mode === 'chat' ? 'chat' : 'user';
+
+    for (const entry of deliveryLog) {
+      const recipient = entry.recipient || {};
+      const username = recipient.username ? `@${recipient.username}` : '';
+      const name = recipient.name || username || recipient.id || '';
+      const row = [
+        name,
+        recipient.type || defaultType,
+        entry.status || 'unknown',
+        entry.timestamp || '',
+        entry.error || ''
+      ];
+      rows.push(row.map((value) => escapeCsvValue(value)).join(','));
+    }
+
+    const csvContent = rows.join('\n');
+    const filenameTimestamp = formatTimestampForFilename(history.createdAt || history.timestamp);
+    const filename = `broadcast_${filenameTimestamp}.csv`;
+
+    res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+    res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+
+    res.send(`\uFEFF${csvContent}`);
+  } catch (e) {
+    logger.error('download broadcast-history failed', { error: String(e?.message || e) });
+    res.status(500).json({ error: String(e?.message || e) });
+  }
+});
+
+telegramRouter.get('/broadcast-history/:id', (req, res) => {
+  const { userId } = req.query || {};
+  const { id } = req.params;
+
+  if (!userId) {
+    return res.status(401).json({ error: 'Unauthorized' });
+  }
+
+  try {
+    const history = getBroadcastHistoryById(id);
+    if (!history || String(history.userId) !== String(userId)) {
+      return res.status(404).json({ error: 'Broadcast history not found' });
+    }
+
+    res.json(history);
+  } catch (e) {
+    logger.error('get broadcast-history detail failed', { error: String(e?.message || e) });
+    res.status(500).json({ error: String(e?.message || e) });
+  }
 });
 
 // Get broadcast history list
@@ -1921,125 +2089,341 @@ taskManager.attachWorker('parse_audience', async (task, manager) => {
 });
 
 taskManager.attachWorker('broadcast', async (task, manager) => {
-  const { peerId, message, userIds, userId, audienceId, audienceName, mode } = task.payload;
-  const targets = Array.isArray(userIds) && userIds.length ? userIds : [peerId];
-  const total = targets.length;
+  const { 
+    audienceId, 
+    mode, 
+    manualRecipients = [], 
+    message, 
+    imageBase64, 
+    maxRecipients, 
+    delaySeconds = 2,
+    userId,
+    historyId: providedHistoryId,
+    historyCreatedAt
+  } = task.payload;
   
-  // Get Telegram client for fallback lookups
+  logger.info('[BROADCAST] Starting broadcast worker', {
+    taskId: task.id,
+    audienceId,
+    mode,
+    manualRecipientsCount: manualRecipients.length,
+    hasImage: !!imageBase64,
+    maxRecipients,
+    delaySeconds,
+    userId,
+    historyId: providedHistoryId
+  });
+  
+  // Get Telegram client
   const { getClient } = await import('../services/telegramClient.js');
   const tg = await getClient();
   
-  const recipients = [];
-  let successCount = 0;
-  let failedCount = 0;
-  
-  for (let i = 0; i < total; i += 1) {
-    const target = targets[i];
-    const recipientInfo = {
-      id: typeof target === 'object' ? target.id : target,
-      username: typeof target === 'object' ? target.username : null,
-      fullName: typeof target === 'object' ? (target.fullName || `${target.firstName || ''} ${target.lastName || ''}`.trim()) : null,
-      status: 'pending',
-      error: null
-    };
-    
+  // Decode image buffer if provided
+  let imageBuffer = null;
+  if (imageBase64) {
     try {
-      let resolvedTarget = target;
+      imageBuffer = Buffer.from(imageBase64, 'base64');
+      logger.info('[BROADCAST] Image decoded', { size: imageBuffer.length });
+    } catch (e) {
+      logger.warn('[BROADCAST] Failed to decode image', { 
+        error: String(e?.message || e) 
+      });
+    }
+  }
+  
+  // Load audience if audienceId provided
+  let audienceUsers = [];
+  let audienceName = null;
+  if (audienceId) {
+    try {
+      // Find the audience results file
+      const fs = await import('fs');
+      const path = await import('path');
+      const { fileURLToPath } = await import('url');
+      const __filename = fileURLToPath(import.meta.url);
+      const __dirname = path.dirname(__filename);
+      const dataDir = path.resolve(__dirname, '..', 'data');
       
-      // If target is a peer object, convert to InputPeer
-      if (typeof target === 'object' && target.id && target.type) {
-        try {
-          // Try to use peer metadata directly
-          resolvedTarget = peerToInputPeer(target);
-          logger.info('Using peer metadata for broadcast', {
-            userId: target.id,
-            hasAccessHash: !!target.accessHash,
-            type: target.type
-          });
-        } catch (peerErr) {
-          logger.warn('Failed to convert peer to InputPeer, trying runtime lookup', {
-            userId: target.id,
-            error: String(peerErr?.message || peerErr)
-          });
-          
-          // Fallback: try to get entity at runtime
-          if (target.accessHash) {
-            try {
-              resolvedTarget = await tg.getInputEntity({
-                id: BigInt(target.id),
-                accessHash: BigInt(target.accessHash),
-                className: target.type === 'User' ? 'InputUser' : 'InputPeerUser'
-              });
-            } catch (fallbackErr) {
-              logger.warn('Runtime lookup failed, trying username/ID fallback', {
-                userId: target.id,
-                error: String(fallbackErr?.message || fallbackErr)
-              });
-              
-              // Final fallback: try username or ID
-              if (target.username) {
-                resolvedTarget = target.username;
-              } else {
-                resolvedTarget = target.id;
-              }
-            }
-          } else {
-            logger.warn('No access hash available for runtime lookup, using ID fallback', {
-              userId: target.id
-            });
-            
-            // Final fallback: try ID directly
-            resolvedTarget = target.id;
-          }
-        }
+      const files = fs.readdirSync(dataDir);
+      const audienceFile = files.find(f => 
+        f.startsWith('audience_results_') && 
+        f.includes(audienceId) && 
+        f.endsWith('.json')
+      );
+      
+      if (!audienceFile) {
+        throw new Error(`Audience file not found for ID: ${audienceId}`);
       }
       
-      await sendMessage(resolvedTarget, message);
-      recipientInfo.status = 'success';
+      const audienceData = readJson(audienceFile, null);
+      if (!audienceData || !audienceData.users) {
+        throw new Error(`Invalid audience data for ID: ${audienceId}`);
+      }
+      
+      audienceUsers = audienceData.users || [];
+      audienceName = deriveAudienceName(audienceData) || audienceId || null;
+      logger.info('[BROADCAST] Loaded audience', { 
+        audienceId,
+        usersCount: audienceUsers.length 
+      });
+    } catch (e) {
+      logger.error('[BROADCAST] Failed to load audience', { 
+        audienceId,
+        error: String(e?.message || e) 
+      });
+      throw e;
+    }
+  } else {
+    audienceName = 'Manual recipients';
+  }
+  
+  // Build recipients array
+  let recipients = [];
+  
+  if (mode === 'dm') {
+    // DM mode: use audience users and manual recipients (individual users)
+    recipients = [...audienceUsers];
+    
+    // Add manual recipients
+    for (const manualRecipient of manualRecipients) {
+      if (typeof manualRecipient === 'string') {
+        // String: username or user ID
+        recipients.push({
+          id: manualRecipient,
+          username: manualRecipient.startsWith('@') ? manualRecipient.slice(1) : manualRecipient,
+          firstName: '',
+          lastName: '',
+          fullName: manualRecipient
+        });
+      } else if (typeof manualRecipient === 'object' && manualRecipient.id) {
+        // Object: user object with peer metadata
+        recipients.push(manualRecipient);
+      }
+    }
+  } else if (mode === 'chat') {
+    // Chat mode: use source channels from audience (deduplicated)
+    const channelPeers = new Map();
+    
+    for (const user of audienceUsers) {
+      if (user.sourceChannel && user.sourceChannel.peer) {
+        const channelId = user.sourceChannel.peer.id;
+        if (!channelPeers.has(channelId)) {
+          channelPeers.set(channelId, {
+            id: channelId,
+            title: user.sourceChannel.title || 'Unknown',
+            username: user.sourceChannel.username,
+            peer: user.sourceChannel.peer
+          });
+        }
+      }
+    }
+    
+    recipients = Array.from(channelPeers.values());
+    
+    // Add manual recipients (should be channel identifiers)
+    for (const manualRecipient of manualRecipients) {
+      if (typeof manualRecipient === 'string') {
+        // String: channel username or ID
+        recipients.push({
+          id: manualRecipient,
+          username: manualRecipient.startsWith('@') ? manualRecipient.slice(1) : manualRecipient,
+          title: manualRecipient
+        });
+      } else if (typeof manualRecipient === 'object' && manualRecipient.id) {
+        // Object: channel object with peer metadata
+        recipients.push(manualRecipient);
+      }
+    }
+    
+    logger.info('[BROADCAST] Chat mode: deduplicated source channels', {
+      uniqueChannels: recipients.length
+    });
+  }
+  
+  // Apply maxRecipients limit
+  if (maxRecipients && maxRecipients > 0 && recipients.length > maxRecipients) {
+    recipients = recipients.slice(0, maxRecipients);
+    logger.info('[BROADCAST] Applied recipient limit', {
+      original: recipients.length,
+      limited: maxRecipients
+    });
+  }
+  
+  const total = recipients.length;
+  let successCount = 0;
+  let failedCount = 0;
+  const deliveryLog = [];
+  
+  logger.info('[BROADCAST] Starting message delivery', {
+    total,
+    mode,
+    delaySeconds
+  });
+  
+  manager.setStatus(task.id, 'running', {
+    progress: 0,
+    current: 0,
+    total,
+    success: 0,
+    failed: 0,
+    message: 'Starting broadcast...'
+  });
+  
+  // Send messages sequentially with delay
+  for (let i = 0; i < total; i++) {
+    const recipient = recipients[i];
+    const startTime = Date.now();
+    let resolvedPeer = null;
+    let deliveryStatus = 'pending';
+    let errorMessage = null;
+    
+    try {
+      // Resolve peer based on mode
+      if (mode === 'dm') {
+        // DM mode: resolve user peer
+        resolvedPeer = await resolvePeerFromUser(tg, recipient);
+        
+        // Substitute {name} tokens in message
+        const recipientName = recipient.fullName || 
+                             recipient.firstName || 
+                             recipient.username || 
+                             recipient.id || 
+                             'User';
+        const personalizedMessage = message.replace(/\{name\}/g, recipientName);
+        
+        // Send message with optional image
+        await sendMediaMessage(resolvedPeer, personalizedMessage, imageBuffer);
+        
+        logger.info('[BROADCAST] Message sent to user', {
+          userId: recipient.id,
+          username: recipient.username,
+          name: recipientName
+        });
+      } else {
+        // Chat mode: resolve channel peer
+        if (recipient.peer) {
+          resolvedPeer = peerToInputPeer(recipient.peer);
+        } else if (recipient.username) {
+          resolvedPeer = await resolvePeerFromUsername(tg, recipient.username);
+        } else {
+          throw new Error('No peer metadata or username available for channel');
+        }
+        
+        // Send message without name substitution
+        await sendMediaMessage(resolvedPeer, message, imageBuffer);
+        
+        logger.info('[BROADCAST] Message sent to channel', {
+          channelId: recipient.id,
+          title: recipient.title
+        });
+      }
+      
       successCount++;
+      deliveryStatus = 'success';
       
     } catch (e) {
-      const errorMsg = String(e?.message || e);
-      logger.warn('Broadcast message failed', { 
-        target: target,
-        error: errorMsg
+      failedCount++;
+      deliveryStatus = 'failed';
+      errorMessage = String(e?.message || e);
+      
+      logger.warn('[BROADCAST] Message delivery failed', {
+        recipient: recipient.id || recipient.username,
+        mode,
+        error: errorMessage
       });
       recipientInfo.status = 'failed';
       recipientInfo.error = errorMsg;
       failedCount++;
     }
     
-    recipients.push(recipientInfo);
+    const endTime = Date.now();
     
-    if (i % 5 === 0) manager.setProgress(task.id, Math.floor(((i + 1) / total) * 100), { current: i + 1, total });
-    await sleep(700);
+    // Log delivery attempt
+    deliveryLog.push({
+      recipient: {
+        id: recipient.id,
+        username: recipient.username,
+        name: mode === 'dm' ? (recipient.fullName || recipient.firstName) : recipient.title
+      },
+      status: deliveryStatus,
+      error: errorMessage,
+      timestamp: new Date().toISOString(),
+      duration: endTime - startTime
+    });
+    
+    // Update progress
+    const progress = Math.floor(((i + 1) / total) * 100);
+    manager.setStatus(task.id, 'running', {
+      progress,
+      current: i + 1,
+      total,
+      success: successCount,
+      failed: failedCount,
+      message: `Sent ${i + 1}/${total} messages (${successCount} success, ${failedCount} failed)`
+    });
+    
+    // Rate limiting delay (except for last message)
+    if (i < total - 1) {
+      await sleep(delaySeconds * 1000);
+    }
   }
   
-  // Save broadcast history
-  const historyId = `broadcast_${Date.now()}`;
+  logger.info('[BROADCAST] Broadcast completed', {
+    total,
+    success: successCount,
+    failed: failedCount
+  });
+  
+  // Persist results to history file
+  const normalizedHistoryId = providedHistoryId || generateBroadcastHistoryId(userId || 'unknown');
+  const createdAt = historyCreatedAt || new Date().toISOString();
+  const completedAt = new Date().toISOString();
+  const summary = {
+    total,
+    success: successCount,
+    failed: failedCount,
+    successRate: total > 0 ? ((successCount / total) * 100).toFixed(2) + '%' : '0%'
+  };
+  const status = computeBroadcastStatus(summary);
+  const messagePreview = buildMessagePreview(message);
   const historyData = {
-    id: historyId,
-    userId: userId,
-    message: message,
-    createdAt: Date.now(),
-    status: failedCount === 0 ? 'completed' : (successCount === 0 ? 'failed' : 'partial'),
+    id: normalizedHistoryId,
+    taskId: task.id,
+    userId,
     audienceId: audienceId || null,
-    audienceName: audienceName || mode || 'Manual',
-    mode: mode || 'manual',
-    totalCount: total,
-    successCount: successCount,
-    failedCount: failedCount,
-    recipients: recipients
+    audienceName: audienceName || (audienceId ? audienceId : 'Manual recipients'),
+    mode,
+    message,
+    messagePreview,
+    hasImage: !!imageBuffer,
+    delaySeconds,
+    maxRecipients,
+    createdAt,
+    completedAt,
+    timestamp: createdAt,
+    status,
+    summary,
+    deliveryLog
   };
   
   try {
-    await writeJson(`broadcast_history_${historyId}_${userId}.json`, historyData);
-    logger.info('Broadcast history saved', { historyId, successCount, failedCount });
-  } catch (err) {
-    logger.error('Failed to save broadcast history', { error: String(err?.message || err) });
+    saveBroadcastHistory(historyData);
+    logger.info('[BROADCAST] Results saved to history', {
+      historyId: normalizedHistoryId,
+      file: `broadcast_results_${normalizedHistoryId}.json`
+    });
+  } catch (e) {
+    logger.error('[BROADCAST] Failed to save history', {
+      error: String(e?.message || e)
+    });
   }
   
-  return { sent: successCount, failed: failedCount, historyId: historyId };
+  return {
+    total,
+    success: successCount,
+    failed: failedCount,
+    historyId: normalizedHistoryId
+  };
 });
 
 
