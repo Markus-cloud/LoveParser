@@ -2331,9 +2331,6 @@ taskManager.attachWorker('broadcast', async (task, manager) => {
         mode,
         error: errorMessage
       });
-      recipientInfo.status = 'failed';
-      recipientInfo.error = errorMsg;
-      failedCount++;
     }
     
     const endTime = Date.now();

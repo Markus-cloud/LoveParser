@@ -20,6 +20,7 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
+import { BroadcastHistory } from "@/components/BroadcastHistory";
 
 interface AudienceResult {
   id: string;
@@ -70,6 +71,7 @@ export default function Broadcast() {
 
   // UI state
   const [audienceResults, setAudienceResults] = useState<AudienceResult[]>([]);
+  const [historyRefreshTrigger, setHistoryRefreshTrigger] = useState(0);
 
   // Load audience results
   useEffect(() => {
@@ -288,6 +290,9 @@ export default function Broadcast() {
 
           // Clear localStorage on successful completion
           localStorage.removeItem(STORAGE_KEY);
+
+          // Trigger history refresh
+          setHistoryRefreshTrigger(prev => prev + 1);
 
           toast({
             title: "Рассылка завершена",
@@ -613,6 +618,9 @@ export default function Broadcast() {
             </Button>
           </div>
         </GlassCard>
+
+        {/* Broadcast History Section */}
+        <BroadcastHistory refreshTrigger={historyRefreshTrigger} />
       </div>
     </Layout>
   );
