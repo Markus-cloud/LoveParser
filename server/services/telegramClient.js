@@ -537,7 +537,7 @@ export async function fetchUserProfilePhoto(tg, userId) {
 */
 
 // Convert peer metadata to GramJS InputPeer
-function peerToInputPeer(peer) {
+export function peerToInputPeer(peer) {
   if (!peer || !peer.id) {
     throw new Error('Invalid peer: missing id');
   }
@@ -545,14 +545,19 @@ function peerToInputPeer(peer) {
   const peerId = typeof peer.id === 'bigint' ? peer.id : BigInt(peer.id);
   const accessHash = typeof peer.accessHash === 'bigint' ? peer.accessHash : BigInt(peer.accessHash || 0);
   
-  if (peer.type === 'Channel') {
+  if (peer.type === 'Channel' || peer.type === 'channel') {
     return new Api.InputPeerChannel({
       channelId: peerId,
       accessHash: accessHash
     });
-  } else if (peer.type === 'Chat') {
+  } else if (peer.type === 'Chat' || peer.type === 'chat') {
     return new Api.InputPeerChat({
       chatId: peerId
+    });
+  } else if (peer.type === 'User' || peer.type === 'user') {
+    return new Api.InputPeerUser({
+      userId: peerId,
+      accessHash: accessHash
     });
   } else {
     throw new Error(`Unknown peer type: ${peer.type}`);
@@ -1203,4 +1208,25 @@ export async function sendMessage(peerId, message) {
   return { ok: true };
 }
 
+/**
+ * Extracts peer metadata from GramJS user object
+ * @param {Object} user - GramJS user object
+ * @returns {Object} Peer metadata object
+ */
+export function extractUserPeerMetadata(user) {
+  if (!user || !user.id) {
+    return null;
+  }
+  
+  const userId = user.id?.value || user.id;
+  const userIdString = typeof userId === 'bigint' ? String(userId) : String(userId);
+  const accessHash = user.accessHash?.value || user.accessHash;
+  const accessHashString = accessHash ? (typeof accessHash === 'bigint' ? String(accessHash) : String(accessHash)) : null;
+  
+  return {
+    id: userIdString,
+    accessHash: accessHashString,
+    type: 'User'
+  };
+}
 
